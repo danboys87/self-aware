@@ -73,7 +73,7 @@ textarea{width:100%;min-height:90px;margin-top:6px}
     <p class="note">Garis hijau/merah = SuperTrend adaptif (naik/turun). Panah = sinyal. Garis putus-putus = SL, TP1, TP2 dari sinyal terakhir; garis abu-abu = entry. Waktu pada grafik: UTC.</p></div>
   </div>
 </div>
-<p class="note">Data diambil lewat server setiap 30 detik (hanya candle yang sudah close). Jika server tidak terjangkau, halaman memakai data demo sintetik. Performa dihitung dari simulasi tanpa fee, hanya untuk membandingkan, bukan saran keuangan.</p>
+<p class="note">Data diambil lewat server setiap 30 detik (hanya candle yang sudah close). Jika server tidak terjangkau, halaman memakai data demo sintetik. Dashboard ini hanya alat bantu analisis, bukan saran keuangan.</p>
 <p class="note">Grafik memakai <a href="https://www.tradingview.com/">TradingView</a> Lightweight Charts™ (Apache-2.0).</p>
 </main>
 <script src="vendor/lightweight-charts.standalone.production.js"></script>
@@ -129,27 +129,13 @@ function run(cs,cfg){
  return{bars,warm,c};
 }
 
-function sim(bars,cs){
- let t=null;const out=[];const fin=R=>{out.push(R);t=null};
- for(let i=0;i<bars.length;i++){const b=bars[i],k=cs[i];
-  if(t&&i>t.i){const d=t.d,sl=d>0?k.low<=t.sl:k.high>=t.sl;
-   if(!sl)for(let j=0;j<2;j++)if(d>0?k.high>=t.tp[j]:k.low<=t.tp[j])t.h[j]=true;
-   const tk=(t.h[0]?.5*t.r[0]:0)+(t.h[1]?.5*t.r[1]:0),rem=1-.5*(t.h[0]+t.h[1]);
-   if(t.h[1])fin(tk);else if(sl)fin(tk-rem);else if(i-t.i>=100||(b.sig&&b.sig.side!==(d>0?'buy':'sell')))fin(tk+rem*d*(k.close-t.e)/t.rk);}
-  if(!t&&b.sig){const s=b.sig;t={i,d:s.side==='buy'?1:-1,e:s.entry,sl:s.sl,rk:s.risk,tp:s.tp,r:s.tpR,h:[false,false]}}
- }
- const n=out.length;let cum=0,pk=0,dd=0,ws=0,ls=0,mw=0,ml=0;
- for(const R of out){cum+=R;pk=Math.max(pk,cum);dd=Math.min(dd,cum-pk);if(R>0){ws++;ls=0;mw=Math.max(mw,ws)}else{ls++;ws=0;ml=Math.max(ml,ls)}}
- return{n,win:n?out.filter(r=>r>0).length/n:0,avg:n?cum/n:0,tot:cum,dd,ws,ls,mw,ml,last:out.slice(-20)};
-}
-
 const f=(v,d=2)=>isFinite(v)?v.toFixed(d):'—',px=v=>v>=100?v.toFixed(2):v>=1?v.toFixed(4):v.toFixed(6);
 const row=(a,b,cl='')=>`<tr><td>${a}</td><td class="${cl}">${b}</td></tr>`,sec=a=>`<tr class="sec"><td colspan="2">${a}</td></tr>`;
 const meter=v=>`<span class="meter"><i style="width:${clamp(v,0,1)*100}%"></i></span>`;
 
 function render(){
  const cs=S.cs,{bars,warm,c}=run(cs,{preset:$('#preset').value,tpMode:$('#tp').value,tf:+$('#tf').value||60});
- const n=bars.length,b=bars[n-1],ls=[...bars].reverse().find(x=>x.sig),st=sim(bars,cs);
+ const n=bars.length,b=bars[n-1],ls=[...bars].reverse().find(x=>x.sig);
  const up=b.trend===1,reg=b.er>=.5?['Trending','up']:b.er>=.25?['Mixed','wn']:['Choppy','dn'];
  const vreg=b.vr<.7?'Low Vol':b.vr<1.3?'Norm Vol':'High Vol';
  const tqc=b.tqi>.6?'up':b.tqi>.35?'wn':'dn';
@@ -162,9 +148,6 @@ function render(){
  h+=sec('TQI breakdown')+row('ER',meter(b.tEr)+f(b.tEr))+row('Volume',meter(b.tVol)+f(b.tVol))+row('Struktur',meter(b.tSt)+f(b.tSt))+row('Momentum',meter(b.tMo)+f(b.tMo));
  if(ls){const s=ls.sig,bu=s.side==='buy';h+=sec(`Last: ${bu?'BUY':'SELL'} (${n-1-ls.i}b ago)`)+row('Entry',px(s.entry))+row('SL',px(s.sl),'dn')+row(`TP1 (${f(s.tpR[0],1)}R)`,px(s.tp[0]),'up')+row(`TP2 (${f(s.tpR[1],1)}R)`,px(s.tp[1]),'up')}
  else h+=sec('Last: —');
- h+=sec('Performa simulasi (tanpa fee)');
- h+=st.n?row('Trade',st.n)+row('Win rate',f(st.win*100,1)+'%',st.win>=.5?'up':'dn')+row('Avg R',(st.avg>=0?'+':'')+f(st.avg)+'R',st.avg>0?'up':'dn')+row('Total R',(st.tot>=0?'+':'')+f(st.tot,1)+'R',st.tot>0?'up':'dn')+row('Max DD',f(st.dd)+'R','dn')+row('Streak maks W / L',st.mw+' / '+st.ml)
-  :row('Trade','belum ada','mu');
  $('#dash').innerHTML=h;
  $('#meta').textContent=`${n} bar · ${new Date(cs[0].t).toISOString().slice(0,10)} s/d ${new Date(cs[n-1].t).toISOString().slice(0,10)} · warmup ${warm} bar · ${S.src}`;
  chart(cs,bars,ls);
