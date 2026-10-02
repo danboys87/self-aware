@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SATS Dashboard (Live)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f2f4f8;--panel:#fff;--row:#f1f3f7;--text:#131722;--muted:#6b7280;--line:#dfe3ec;--bull:#00a85a;--bear:#e03b3b;--warn:#b7860b;--head:#2962ff;--wick:#8a90a0;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b0e14;--panel:#131722;--row:#1a1f2d;--text:#d1d4dc;--muted:#787b86;--line:#2a2e39;--bull:#00e676;--bear:#ff5252;--warn:#ffeb3b;--wick:#5d6373}}
+:root[data-theme="dark"]{--bg:#0b0e14;--panel:#131722;--row:#1a1f2d;--text:#d1d4dc;--muted:#787b86;--line:#2a2e39;--bull:#00e676;--bear:#ff5252;--warn:#ffeb3b;--wick:#5d6373}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums}
+main{max-width:1120px;margin:0 auto;padding:14px}
+h1{font-size:17px;margin:0 0 2px;font-weight:600}
+.sub{color:var(--muted);font-size:12.5px;margin:0 0 12px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+select,input,button,textarea{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 9px}
+input[type=number]{width:74px}
+button{cursor:pointer}button:hover{border-color:var(--head)}
+:focus-visible{outline:2px solid var(--head);outline-offset:1px}
+label{color:var(--muted);font-size:12.5px;display:flex;gap:6px;align-items:center}
+.grid{display:grid;grid-template-columns:minmax(0,350px) minmax(0,1fr);gap:12px;align-items:start}
+@media (max-width:820px){.grid{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden;margin-bottom:12px}
+table{width:100%;border-collapse:collapse}
+th{background:var(--head);color:#fff;text-align:left;padding:7px 10px;font-weight:600;font-size:13px}
+th:last-child{text-align:right}
+td{padding:5px 10px;border-top:1px solid var(--line)}
+tr.sec td{background:var(--row);color:var(--muted);font-size:12px;font-weight:600}
+td:first-child{color:var(--muted)}td:last-child{text-align:right;font-weight:500}
+tr:nth-child(even) td{background:color-mix(in srgb,var(--row) 45%,transparent)}
+tr.sec:nth-child(even) td{background:var(--row)}
+.up{color:var(--bull)}.dn{color:var(--bear)}.wn{color:var(--warn)}.mu{color:var(--muted)}
+.meter{display:inline-block;width:56px;height:6px;background:var(--line);border-radius:3px;margin-right:8px;vertical-align:middle;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--head)}
+.chartwrap{padding:6px 6px 2px;position:relative}
+#chart{width:100%;height:440px}
+@media (max-width:820px){#chart{height:340px}}
+.legend{position:absolute;left:14px;top:12px;z-index:3;font-size:12px;pointer-events:none;color:var(--muted)}
+.legend b{font-weight:500;color:var(--text)}
+a{color:var(--head)}
+.note{color:var(--muted);font-size:12px;padding:0 4px 10px}
+details{margin-bottom:12px}summary{cursor:pointer;color:var(--muted);font-size:12.5px}
+textarea{width:100%;min-height:90px;margin-top:6px}
+</style>
+</head>
+<body>
+<main>
+<h1>Self-Aware Trend System: Dashboard Live</h1>
+<p class="sub" id="meta"></p>
+<div class="bar">
+  <label>Preset <select id="preset"><option>Crypto 24/7</option><option>Auto</option><option>Default</option><option>Scalping</option><option>Swing</option></select></label>
+  <label>TP <select id="tp"><option value="fixed">Fixed 1R / 2R</option><option value="dynamic">Dynamic</option></select></label>
+  <label>TF (menit) <input id="tf" type="number" value="60" min="1"></label>
+  <label>Exchange <select id="ex"><option value="okx">OKX</option><option value="bitget">Bitget</option></select></label>
+  <label>Pair <input id="pair" value="BTC-USDT" size="10" list="pairs" autocomplete="off"></label>
+  <datalist id="pairs"><option value="BTC-USDT"><option value="ETH-USDT"><option value="SOL-USDT"><option value="XRP-USDT"><option value="DOGE-USDT"></datalist>
+  <label>Bar <select id="bar"><option>5m</option><option>15m</option><option selected>1H</option><option>4H</option><option>1D</option></select></label>
+  <button id="livebtn" aria-pressed="true">Live: ON</button>
+  <button id="demo">Data demo</button>
+  <label>CSV <input id="file" type="file" accept=".csv,text/csv"></label>
+</div>
+<details><summary>Atau tempel CSV (time,open,high,low,close,volume)</summary><textarea id="paste" placeholder="time,open,high,low,close,volume"></textarea><button id="load">Pakai data ini</button></details>
+<div class="grid">
+  <div><div class="card"><table id="dash"></table></div>
+  <div class="card" id="poscard" hidden><table id="pos"></table></div></div>
+  <div>
+    <div class="card chartwrap"><div id="legend" class="legend" aria-live="off"></div><div id="chart" role="img" aria-label="Grafik candle dengan garis SuperTrend adaptif dan sinyal"></div>
+    <p class="note">Garis hijau/merah = SuperTrend adaptif (naik/turun). Panah = sinyal. Garis putus-putus = SL, TP1, TP2 dari sinyal terakhir; garis abu-abu = entry. Waktu pada grafik: UTC.</p></div>
+  </div>
+</div>
+<p class="note">Data diambil lewat server setiap 30 detik (hanya candle yang sudah close). Jika server tidak terjangkau, halaman memakai data demo sintetik. Performa dihitung dari simulasi tanpa fee, hanya untuk membandingkan, bukan saran keuangan.</p>
+<p class="note">Grafik memakai <a href="https://www.tradingview.com/">TradingView</a> Lightweight Charts™ (Apache-2.0).</p>
+</main>
+<script src="vendor/lightweight-charts.standalone.production.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),sd=(n,d,f=0)=>d!==0&&isFinite(n)&&isFinite(d)?n/d:f,
+mc=(v,a,b,x,y)=>x+clamp(sd(v-a,b-a,0),0,1)*(y-x);
+const sma=(a,i,l)=>{if(i<l-1)return NaN;let s=0;for(let k=i-l+1;k<=i;k++)s+=a[k];return s/l};
+const sdv=(a,i,l)=>{const m=sma(a,i,l);if(!isFinite(m))return NaN;let s=0;for(let k=i-l+1;k<=i;k++)s+=(a[k]-m)**2;return Math.sqrt(s/l)};
+const hi_=(a,i,l)=>i<l-1?NaN:Math.max(...a.slice(i-l+1,i+1)),lo_=(a,i,l)=>i<l-1?NaN:Math.min(...a.slice(i-l+1,i+1));
+const PR={Scalping:{atrLen:10,baseMult:1.5,erLen:14,rsiLen:9,slMult:1},Default:{atrLen:14,baseMult:2,erLen:20,rsiLen:14,slMult:1.5},Swing:{atrLen:21,baseMult:2.5,erLen:30,rsiLen:21,slMult:2},'Crypto 24/7':{atrLen:14,baseMult:2.8,erLen:20,rsiLen:14,slMult:2.5}};
+const DEF={tf:60,preset:'Crypto 24/7',tpMode:'fixed',baseLen:100,adaptS:.5,qS:.4,qCurve:1.5,asymS:.5,wEr:.35,wVol:.2,wSt:.25,wMo:.2,structLen:20,momLen:10,volLen:20,piv:3,tp1:1,tp2:2,dTq:.6,dVo:.4,dMin:.5,dMax:2,dFl:.5,dCe:8};
+
+function run(cs,cfg){
+ const c={...DEF,...cfg};let p=c.preset;if(p==='Auto')p=c.tf<=5?'Scalping':c.tf<=240?'Default':'Swing';c.rp=p;Object.assign(c,PR[p]);
+ const n=cs.length,H=cs.map(b=>b.high),L=cs.map(b=>b.low),C=cs.map(b=>b.close),V=cs.map(b=>b.volume||0);
+ const tr=H.map((h,i)=>i?Math.max(h-L[i],Math.abs(h-C[i-1]),Math.abs(L[i]-C[i-1])):h-L[i]);
+ const atr=Array(n).fill(NaN);
+ for(let i=c.atrLen-1;i<n;i++){if(i===c.atrLen-1){let s=0;for(let k=0;k<=i;k++)s+=tr[k];atr[i]=s/c.atrLen}else atr[i]=(atr[i-1]*(c.atrLen-1)+tr[i])/c.atrLen}
+ const ra=atr.map(v=>isFinite(v)?v:0);
+ const warm=Math.max(50,Math.max(c.atrLen,c.erLen,c.rsiLen,c.volLen,c.piv*2+1,c.momLen,c.structLen)+10);
+ const tp0=Math.min(c.tp1,c.tp2),tp9=Math.max(c.tp1,c.tp2);
+ const tr_=[],lw=[],up=[],tq=[];let aS=null,pS=null,ts=0,pH=NaN,pL=NaN;const bars=[];
+ for(let i=0;i<n;i++){
+  const bs=sma(ra,i,c.baseLen),vr=sd(ra[i],isFinite(bs)?bs:ra[i],1);
+  let er=0;if(i>=c.erLen){let pa=0;for(let k=i-c.erLen+1;k<=i;k++)pa+=Math.abs(C[k]-C[k-1]);er=sd(Math.abs(C[i]-C[i-c.erLen]),pa,0)}
+  const atrV=ra[i]*(.5+.5*er);
+  const hv=V[i]>0,vz=hv?sd(V[i]-sma(V,i,c.volLen),sdv(V,i,c.volLen),0):NaN;
+  const tVol=hv?mc(vz,-1,2,0,1):mc(vr,.6,1.8,0,1);
+  const sH=hi_(H,i,c.structLen),sL=lo_(L,i,c.structLen),tSt=clamp(Math.abs(sd(C[i]-sL,sH-sL,.5)-.5)*2,0,1);
+  let tMo=0;if(i>=c.momLen){const w=C[i]-C[i-c.momLen];let a=0;for(let k=0;k<c.momLen;k++){const d=C[i-k]-C[i-k-1];if((w>0&&d>0)||(w<0&&d<0))a++}tMo=a/c.momLen}
+  const tEr=clamp(er,0,1),ws=c.wEr+c.wVol+c.wSt+c.wMo;
+  const tqi=clamp((tEr*c.wEr+tVol*c.wVol+tSt*c.wSt+tMo*c.wMo)/(ws||1),0,1);tq[i]=tqi;
+  const leg=1+c.adaptS*(.5-er),qd=Math.pow(1-tqi,c.qCurve),tm=1-c.qS+c.qS*(.6+.8*qd),sym=c.baseMult*leg*tm;
+  const aR=sym*(1-c.asymS*tqi*.3),pR=sym*(1+c.asymS*tqi*.4);
+  aS=aS===null?aR:aS*.85+aR*.15;pS=pS===null?pR:pS*.85+pR*.15;
+  const pt=i?tr_[i-1]:1,lm=pt===1?aS:pS,um=pt===1?pS:aS;
+  const lr=C[i]-lm*atrV,ur=C[i]+um*atrV;
+  lw[i]=i?(C[i-1]>lw[i-1]?Math.max(lr,lw[i-1]):lr):lr;up[i]=i?(C[i-1]<up[i-1]?Math.min(ur,up[i-1]):ur):ur;
+  const fu=i>0&&pt===-1&&C[i]>up[i-1],fd=i>0&&pt===1&&C[i]<lw[i-1];
+  tr_[i]=i===0?1:fu?1:fd?-1:pt;if(tr_[i]!==pt)ts=i;
+  const flipUp=i>0&&tr_[i]===1&&tr_[i-1]===-1,flipDn=i>0&&tr_[i]===-1&&tr_[i-1]===1;
+  const ct=i-c.piv;if(ct-c.piv>=0){let ph=true,pl=true;for(let k=1;k<=c.piv;k++){if(!(H[ct]>H[ct-k]&&H[ct]>H[ct+k]))ph=false;if(!(L[ct]<L[ct-k]&&L[ct]<L[ct+k]))pl=false}if(ph)pH=H[ct];if(pl)pL=L[ct]}
+  // TP live (hanya TP1 & TP2)
+  let r1=tp0,r2=tp9,sc=1;
+  if(c.tpMode==='dynamic'){const raw=(tqi*c.dTq+mc(vr,.5,2,0,1)*c.dVo)/(c.dTq+c.dVo);sc=c.dMin+raw*(c.dMax-c.dMin);const f2=c.dFl*(tp9/Math.max(tp0,.01));const a=clamp(tp0*sc,c.dFl,c.dCe),b=clamp(tp9*sc,f2,c.dCe);r1=Math.min(a,b);r2=Math.max(a,b)}
+  let sig=null;
+  if((flipUp||flipDn)&&i>=warm){const e=C[i];
+   if(flipUp){const sl=Math.min((isFinite(pL)?pL:L[i])-c.slMult*atrV,e-c.slMult*atrV),rk=e-sl;sig={side:'buy',entry:e,sl,risk:rk,tpR:[r1,r2],tp:[e+rk*r1,e+rk*r2]}}
+   else{const sl=Math.max((isFinite(pH)?pH:H[i])+c.slMult*atrV,e+c.slMult*atrV),rk=sl-e;sig={side:'sell',entry:e,sl,risk:rk,tpR:[r1,r2],tp:[e-rk*r1,e-rk*r2]}}}
+  bars.push({i,trend:tr_[i],st:tr_[i]===1?lw[i]:up[i],tqi,er,vr,vz,tEr,tVol,tSt,tMo,sc,r1,r2,sig,age:i-ts});
+ }
+ return{bars,warm,c};
+}
+
+function sim(bars,cs){
+ let t=null;const out=[];const fin=R=>{out.push(R);t=null};
+ for(let i=0;i<bars.length;i++){const b=bars[i],k=cs[i];
+  if(t&&i>t.i){const d=t.d,sl=d>0?k.low<=t.sl:k.high>=t.sl;
+   if(!sl)for(let j=0;j<2;j++)if(d>0?k.high>=t.tp[j]:k.low<=t.tp[j])t.h[j]=true;
+   const tk=(t.h[0]?.5*t.r[0]:0)+(t.h[1]?.5*t.r[1]:0),rem=1-.5*(t.h[0]+t.h[1]);
+   if(t.h[1])fin(tk);else if(sl)fin(tk-rem);else if(i-t.i>=100||(b.sig&&b.sig.side!==(d>0?'buy':'sell')))fin(tk+rem*d*(k.close-t.e)/t.rk);}
+  if(!t&&b.sig){const s=b.sig;t={i,d:s.side==='buy'?1:-1,e:s.entry,sl:s.sl,rk:s.risk,tp:s.tp,r:s.tpR,h:[false,false]}}
+ }
+ const n=out.length;let cum=0,pk=0,dd=0,ws=0,ls=0,mw=0,ml=0;
+ for(const R of out){cum+=R;pk=Math.max(pk,cum);dd=Math.min(dd,cum-pk);if(R>0){ws++;ls=0;mw=Math.max(mw,ws)}else{ls++;ws=0;ml=Math.max(ml,ls)}}
+ return{n,win:n?out.filter(r=>r>0).length/n:0,avg:n?cum/n:0,tot:cum,dd,ws,ls,mw,ml,last:out.slice(-20)};
+}
+
+const f=(v,d=2)=>isFinite(v)?v.toFixed(d):'—',px=v=>v>=100?v.toFixed(2):v>=1?v.toFixed(4):v.toFixed(6);
+const row=(a,b,cl='')=>`<tr><td>${a}</td><td class="${cl}">${b}</td></tr>`,sec=a=>`<tr class="sec"><td colspan="2">${a}</td></tr>`;
+const meter=v=>`<span class="meter"><i style="width:${clamp(v,0,1)*100}%"></i></span>`;
+
+function render(){
+ const cs=S.cs,{bars,warm,c}=run(cs,{preset:$('#preset').value,tpMode:$('#tp').value,tf:+$('#tf').value||60});
+ const n=bars.length,b=bars[n-1],ls=[...bars].reverse().find(x=>x.sig),st=sim(bars,cs);
+ const up=b.trend===1,reg=b.er>=.5?['Trending','up']:b.er>=.25?['Mixed','wn']:['Choppy','dn'];
+ const vreg=b.vr<.7?'Low Vol':b.vr<1.3?'Norm Vol':'High Vol';
+ const tqc=b.tqi>.6?'up':b.tqi>.35?'wn':'dn';
+ const cur=b.sig?(b.sig.side==='buy'?['BUY','up']:['SELL','dn']):['—','mu'];
+ let h=`<tr><th>WillyAlgoTrader</th><th>SATS</th></tr>`;
+ h+=row('Preset',c.rp)+row('Trend',up?'Bullish ▲':'Bearish ▼',up?'up':'dn')+row('TQI',f(b.tqi),tqc)+row('Q.Strength',f(c.qS))
+  +row('Signal',cur[0],cur[1])+row('Regime',reg[0],reg[1])+row('ER',f(b.er))+row('Vol Z',isFinite(b.vz)?f(b.vz)+'σ':'n/a')+row('Vol Regime',vreg)
+  +row('TP Mode',c.tpMode==='dynamic'?'Dynamic':'Fixed')+row('TP Scale',c.tpMode==='dynamic'?'×'+f(b.sc):'—')+row('Live R (TP1 / TP2)',f(b.r1,1)+' / '+f(b.r2,1))
+  +row('Status',n>warm?'Ready':(warm-n)+' bars',n>warm?'up':'wn');
+ h+=sec('TQI breakdown')+row('ER',meter(b.tEr)+f(b.tEr))+row('Volume',meter(b.tVol)+f(b.tVol))+row('Struktur',meter(b.tSt)+f(b.tSt))+row('Momentum',meter(b.tMo)+f(b.tMo));
+ if(ls){const s=ls.sig,bu=s.side==='buy';h+=sec(`Last: ${bu?'BUY':'SELL'} (${n-1-ls.i}b ago)`)+row('Entry',px(s.entry))+row('SL',px(s.sl),'dn')+row(`TP1 (${f(s.tpR[0],1)}R)`,px(s.tp[0]),'up')+row(`TP2 (${f(s.tpR[1],1)}R)`,px(s.tp[1]),'up')}
+ else h+=sec('Last: —');
+ h+=sec('Performa simulasi (tanpa fee)');
+ h+=st.n?row('Trade',st.n)+row('Win rate',f(st.win*100,1)+'%',st.win>=.5?'up':'dn')+row('Avg R',(st.avg>=0?'+':'')+f(st.avg)+'R',st.avg>0?'up':'dn')+row('Total R',(st.tot>=0?'+':'')+f(st.tot,1)+'R',st.tot>0?'up':'dn')+row('Max DD',f(st.dd)+'R','dn')+row('Streak maks W / L',st.mw+' / '+st.ml)
+  :row('Trade','belum ada','mu');
+ $('#dash').innerHTML=h;
+ $('#meta').textContent=`${n} bar · ${new Date(cs[0].t).toISOString().slice(0,10)} s/d ${new Date(cs[n-1].t).toISOString().slice(0,10)} · warmup ${warm} bar · ${S.src}`;
+ chart(cs,bars,ls);
+}
+
+let CH=null,sC,stUp,stDn,pLines=[],chartKey='',byTime=new Map();
+const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function theme(){
+ if(!CH)return;
+ CH.applyOptions({layout:{background:{type:'solid',color:cssv('--panel')},textColor:cssv('--muted'),attributionLogo:true},grid:{vertLines:{color:cssv('--line')},horzLines:{color:cssv('--line')}},rightPriceScale:{borderColor:cssv('--line')},timeScale:{borderColor:cssv('--line')}});
+ sC.applyOptions({upColor:cssv('--bull'),downColor:cssv('--bear'),wickUpColor:cssv('--bull'),wickDownColor:cssv('--bear'),borderVisible:false});
+ stUp.applyOptions({color:cssv('--bull')});stDn.applyOptions({color:cssv('--bear')});
+}
+function legendHtml({k,b}){
+ const c=k.close>=k.open?'up':'dn';
+ return `<b class="${c}">O ${px(k.open)} H ${px(k.high)} L ${px(k.low)} C ${px(k.close)}</b> &nbsp;TQI <b>${f(b.tqi)}</b> &nbsp;ER <b>${f(b.er)}</b> &nbsp;<b class="${b.trend===1?'up':'dn'}">${b.trend===1?'Bullish ▲':'Bearish ▼'}</b>`;
+}
+function initChart(){
+ CH=LightweightCharts.createChart($('#chart'),{autoSize:true,timeScale:{timeVisible:true,secondsVisible:false},crosshair:{mode:LightweightCharts.CrosshairMode.Normal}});
+ sC=CH.addCandlestickSeries();
+ const lo={lineWidth:2,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false};
+ stUp=CH.addLineSeries(lo);stDn=CH.addLineSeries(lo);
+ CH.subscribeCrosshairMove(p=>{const v=p.time!==undefined&&byTime.get(p.time);$('#legend').innerHTML=v?legendHtml(v):''});
+ theme();
+ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',theme);
+}
+function chart(cs,bars,ls){
+ if(typeof LightweightCharts==='undefined'){$('#chart').textContent='Library grafik tidak termuat (vendor/lightweight-charts.standalone.production.js).';return}
+ if(!CH)initChart();
+ byTime=new Map();const cd=[],up=[],dn=[],mk=[];
+ for(let i=0;i<cs.length;i++){
+  const k=cs[i],b=bars[i],t=Math.floor(k.t/1000);
+  byTime.set(t,{k,b});
+  cd.push({time:t,open:k.open,high:k.high,low:k.low,close:k.close});
+  up.push(b.trend===1?{time:t,value:b.st}:{time:t}); // whitespace = garis terputus saat tren berbalik
+  dn.push(b.trend===-1?{time:t,value:b.st}:{time:t});
+  if(b.sig)mk.push(b.sig.side==='buy'?{time:t,position:'belowBar',color:cssv('--bull'),shape:'arrowUp',text:'BUY'}:{time:t,position:'aboveBar',color:cssv('--bear'),shape:'arrowDown',text:'SELL'});
+ }
+ sC.setData(cd);stUp.setData(up);stDn.setData(dn);sC.setMarkers(mk);
+ pLines.forEach(l=>sC.removePriceLine(l));pLines=[];
+ if(ls){const g=ls.sig,LS=LightweightCharts.LineStyle;
+  [['Entry',g.entry,cssv('--muted'),LS.Dotted],['SL',g.sl,cssv('--bear'),LS.Dashed],['TP1',g.tp[0],cssv('--bull'),LS.Dashed],['TP2',g.tp[1],cssv('--bull'),LS.Dashed]]
+   .forEach(([title,price,color,lineStyle])=>pLines.push(sC.createPriceLine({price,color,lineWidth:1,lineStyle,axisLabelVisible:true,title})));}
+ const key=S.src.split(' · ')[0]; // pair/bar/exchange berubah -> atur ulang presisi dan zoom; refresh biasa tidak mengganggu zoom pengguna
+ if(key!==chartKey){chartKey=key;const last=cs[cs.length-1].close,pr=last>=100?2:last>=1?4:6;
+  sC.applyOptions({priceFormat:{type:'price',precision:pr,minMove:Math.pow(10,-pr)}});
+  CH.timeScale().setVisibleLogicalRange({from:Math.max(0,cs.length-150),to:cs.length+6});}
+ $('#legend').innerHTML=legendHtml({k:cs[cs.length-1],b:bars[bars.length-1]});
+}
+
+function demo(){
+ let p=100,t=Date.UTC(2026,0,1),sd_=Math.floor(Math.random()*1e6)+1;const r=()=>(sd_=(sd_*1664525+1013904223)%4294967296)/4294967296,cs=[];
+ for(let i=0;i<700;i++){const reg=Math.floor(i/110)%3,dr=reg===0?.16:reg===2?-.16:0,o=p,c=o+dr+(r()-.5)*2.2;
+  cs.push({t,open:o,high:Math.max(o,c)+r()*.8,low:Math.min(o,c)-r()*.8,close:c,volume:1000+r()*2000});p=Math.max(c,10);t+=3600000}
+ S={cs,src:'data demo sintetik'};render();
+}
+function parse(txt,src){
+ const Ls=txt.trim().split(/\r?\n/),h=Ls[0].split(',').map(x=>x.trim().toLowerCase()),ix=k=>h.indexOf(k);
+ const ks=['time','open','high','low','close'].map(ix);if(ks.some(v=>v<0)){alert('Header CSV harus memuat: time, open, high, low, close (volume opsional).');return}
+ const iv=ix('volume'),cs=Ls.slice(1).map(l=>{const q=l.split(','),w=q[ks[0]].trim();return{t:/^\d+$/.test(w)?(w.length<=10?+w*1000:+w):Date.parse(w),open:+q[ks[1]],high:+q[ks[2]],low:+q[ks[3]],close:+q[ks[4]],volume:iv>=0?+q[iv]:0}}).filter(k=>isFinite(k.close)&&isFinite(k.t));
+ if(cs.length<80){alert('Butuh minimal 80 bar (disarankan 500+).');return}
+ cs.sort((a,b)=>a.t-b.t);S={cs,src};render();
+}
+let S,timer=null;
+const TOKEN=new URLSearchParams(location.search).get('token')||'';
+const TFM={'5m':5,'15m':15,'30m':30,'1H':60,'4H':240,'1D':1440};
+const qs=o=>{const p=new URLSearchParams(o);if(TOKEN)p.set('token',TOKEN);return p.toString()};
+function setLive(on){clearInterval(timer);timer=on?setInterval(pull,30000):null;const b=$('#livebtn');b.textContent='Live: '+(on?'ON':'OFF');b.setAttribute('aria-pressed',on)}
+async function pull(){
+ const ex=$('#ex').value,pair=$('#pair').value.trim(),bar=$('#bar').value;
+ try{
+  const r=await fetch('/api/candles?'+qs({ex,pair,bar,limit:600})),j=await r.json();
+  if(!r.ok||j.error)throw new Error(j.error||('HTTP '+r.status));
+  if(j.candles.length<80)throw new Error('candle terlalu sedikit ('+j.candles.length+')');
+  S={cs:j.candles,src:`${ex.toUpperCase()} ${pair.toUpperCase()} ${bar} · live ${new Date().toLocaleTimeString()}`};
+  $('#tf').value=TFM[bar];render();
+ }catch(e){
+  if(!S){demo();$('#meta').textContent='Server/exchange tidak terjangkau ('+e.message+'). Menampilkan data demo.';}
+  else $('#meta').textContent='Gagal ambil data: '+e.message+' (menampilkan data terakhir)';
+ }
+ pullPos();
+}
+async function pullPos(){
+ try{const r=await fetch('/api/positions?'+qs({}));if(!r.ok)return;renderPos(await r.json())}catch{}
+}
+function renderPos(j){
+ const cardEl=$('#poscard');if(!j.positions.length&&!j.closed.length){cardEl.hidden=true;return}
+ cardEl.hidden=false;let h='<tr><th>Posisi bot (paper)</th><th>Status</th></tr>';
+ if(j.positions.length){h+=sec('Terbuka');for(const p of j.positions)h+=row(p.pair+(p.dir>0?' ▲':' ▼'),`${px(p.entry)} · SL ${px(p.sl)} · TP1 ${px(p.tp[0])}${p.hit[0]?' ✓':''} · TP2 ${px(p.tp[1])}`)}
+ else h+=sec('Tidak ada posisi terbuka');
+ if(j.closed.length){h+=sec('Trade terakhir');for(const c of j.closed.slice(0,8))h+=row(`${c.pair} ${c.reason}`,`${c.R>=0?'+':''}${f(c.R)}R`,c.R>0?'up':'dn')}
+ $('#pos').innerHTML=h;
+}
+['preset','tp','tf'].forEach(id=>$('#'+id).addEventListener('input',()=>S&&render()));
+['ex','pair','bar'].forEach(id=>$('#'+id).addEventListener('change',()=>{setLive(true);pull()}));
+$('#livebtn').onclick=()=>{const on=!timer;setLive(on);if(on)pull()};
+$('#demo').onclick=()=>{setLive(false);demo()};
+$('#load').onclick=()=>{setLive(false);parse($('#paste').value,'CSV tempel')};
+$('#file').onchange=e=>{const fl=e.target.files[0];if(!fl)return;setLive(false);const rd=new FileReader();rd.onload=()=>parse(rd.result,fl.name);rd.readAsText(fl)};
+setLive(true);pull();
+</script>
+</body>
+</html>
