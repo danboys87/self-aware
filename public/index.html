@@ -170,13 +170,14 @@ function render(){
  chart(cs,bars,ls);
 }
 
-let CH=null,sC,stUp,stDn,pLines=[],chartKey='',byTime=new Map();
+let CH=null,sC,segs=[],pLines=[],chartKey='',byTime=new Map();
+const LO={lineWidth:2,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false};
 const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 function theme(){
  if(!CH)return;
  CH.applyOptions({layout:{background:{type:'solid',color:cssv('--panel')},textColor:cssv('--muted'),attributionLogo:true},grid:{vertLines:{color:cssv('--line')},horzLines:{color:cssv('--line')}},rightPriceScale:{borderColor:cssv('--line')},timeScale:{borderColor:cssv('--line')}});
  sC.applyOptions({upColor:cssv('--bull'),downColor:cssv('--bear'),wickUpColor:cssv('--bull'),wickDownColor:cssv('--bear'),borderVisible:false});
- stUp.applyOptions({color:cssv('--bull')});stDn.applyOptions({color:cssv('--bear')});
+ segs.forEach(g=>g.s.applyOptions({color:cssv(g.up?'--bull':'--bear')}));
 }
 function legendHtml({k,b}){
  const c=k.close>=k.open?'up':'dn';
@@ -185,8 +186,6 @@ function legendHtml({k,b}){
 function initChart(){
  CH=LightweightCharts.createChart($('#chart'),{autoSize:true,timeScale:{timeVisible:true,secondsVisible:false},crosshair:{mode:LightweightCharts.CrosshairMode.Normal}});
  sC=CH.addCandlestickSeries();
- const lo={lineWidth:2,lastValueVisible:false,priceLineVisible:false,crosshairMarkerVisible:false};
- stUp=CH.addLineSeries(lo);stDn=CH.addLineSeries(lo);
  CH.subscribeCrosshairMove(p=>{const v=p.time!==undefined&&byTime.get(p.time);$('#legend').innerHTML=v?legendHtml(v):''});
  theme();
  matchMedia('(prefers-color-scheme: dark)').addEventListener('change',theme);
@@ -194,16 +193,18 @@ function initChart(){
 function chart(cs,bars,ls){
  if(typeof LightweightCharts==='undefined'){$('#chart').textContent='Library grafik tidak termuat (vendor/lightweight-charts.standalone.production.js).';return}
  if(!CH)initChart();
- byTime=new Map();const cd=[],up=[],dn=[],mk=[];
+ byTime=new Map();const cd=[],mk=[],runs=[];let run=null;
  for(let i=0;i<cs.length;i++){
   const k=cs[i],b=bars[i],t=Math.floor(k.t/1000);
   byTime.set(t,{k,b});
   cd.push({time:t,open:k.open,high:k.high,low:k.low,close:k.close});
-  up.push(b.trend===1?{time:t,value:b.st}:{time:t}); // whitespace = garis terputus saat tren berbalik
-  dn.push(b.trend===-1?{time:t,value:b.st}:{time:t});
+  if(!run||run.up!==(b.trend===1)){run={up:b.trend===1,d:[]};runs.push(run)} // satu series per segmen tren: tidak ada garis diagonal antar segmen
+  run.d.push({time:t,value:b.st});
   if(b.sig)mk.push(b.sig.side==='buy'?{time:t,position:'belowBar',color:cssv('--bull'),shape:'arrowUp',text:'BUY'}:{time:t,position:'aboveBar',color:cssv('--bear'),shape:'arrowDown',text:'SELL'});
  }
- sC.setData(cd);stUp.setData(up);stDn.setData(dn);sC.setMarkers(mk);
+ sC.setData(cd);sC.setMarkers(mk);
+ segs.forEach(g=>CH.removeSeries(g.s));segs=[];
+ runs.forEach(r=>{const s=CH.addLineSeries({...LO,color:cssv(r.up?'--bull':'--bear')});s.setData(r.d);segs.push({s,up:r.up})});
  pLines.forEach(l=>sC.removePriceLine(l));pLines=[];
  if(ls){const g=ls.sig,LS=LightweightCharts.LineStyle;
   [['Entry',g.entry,cssv('--muted'),LS.Dotted],['SL',g.sl,cssv('--bear'),LS.Dashed],['TP1',g.tp[0],cssv('--bull'),LS.Dashed],['TP2',g.tp[1],cssv('--bull'),LS.Dashed]]
