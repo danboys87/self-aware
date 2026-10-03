@@ -5,7 +5,7 @@
 // Daftar koin & exchange: coins.json (atau env COINS="ENA-USDT,SOL-USDT", SCAN_EXCHANGE=okx|bitget).
 // "fallback": exchange cadangan; dipakai per koin jika exchange utama gagal (mis. pair tidak ada di spot exchange utama).
 // Env lain: SCAN_PRESET=Auto TQI_MID=0.4 TQI_EX=0.4 TQI_STRONG=0.5 FRESH=3 SNR_ATR=1
-//           SUMMARY_HOUR=14 (-1 = nonaktif) SUMMARY_TZ=Asia/Jakarta SCAN_FILE SCAN_STATE_FILE SCAN_LOG_FILE
+//           D1_MODE=label|required (default label: 1D hanya label keyakinan, bukan syarat)  SUMMARY_HOUR=14 (-1 = nonaktif) SUMMARY_TZ=Asia/Jakarta SCAN_FILE SCAN_STATE_FILE SCAN_LOG_FILE
 // Scanner hanya melaporkan; tidak membuka order. Aturan ini belum divalidasi backtest.
 const fs = require('fs');
 const { runSATS } = require('./sats');
@@ -32,7 +32,7 @@ function loadConfig() {
     bar: env.SCAN_BAR || file.bar || '1H',
     preset: env.SCAN_PRESET || file.preset || 'Auto',
     coins,
-    P: { mid: +(env.TQI_MID || 0.4), ex: +(env.TQI_EX || 0.4), strong: +(env.TQI_STRONG || 0.5), fresh: +(env.FRESH || 3), snr: +(env.SNR_ATR || 1.0) },
+    P: { mid: +(env.TQI_MID || 0.4), ex: +(env.TQI_EX || 0.4), strong: +(env.TQI_STRONG || 0.5), fresh: +(env.FRESH || 3), snr: +(env.SNR_ATR || 1.0), d1: (env.D1_MODE || file.d1 || 'label').toLowerCase() },
     summaryHour: env.SUMMARY_HOUR === undefined ? 14 : +env.SUMMARY_HOUR,
     tz: env.SUMMARY_TZ || 'Asia/Jakarta',
   };
@@ -51,8 +51,8 @@ function tfInfo(cs, tfMinutes, preset) {
 }
 
 // SnR (proksi terukur): swing high/low terdekat (pivot 5 bar kiri-kanan, 120 bar terakhir), jarak dalam ATR.
-function snrOf(I) {
-  const cs = I.cs, n = cs.length, L = 5, from = Math.max(L, n - 120), p0 = cs[n - 1].close;
+function snrOf(I, p0) { // p0 = harga terkini (close bar eksekusi terakhir), bukan close harian kemarin
+  const cs = I.cs, n = cs.length, L = 5, from = Math.max(L, n - 120);
   let res = Infinity, sup = -Infinity;
   for (let i = from; i < n - L; i++) {
     let ph = true, pl = true;
@@ -78,9 +78,9 @@ function decide(I, lad, sn, P) {
   else if (!aligned) { code = 'rejected'; title = 'DITOLAK: MELAWAN TREN ' + mi.toUpperCase(); }
   else if (m.tqi < P.mid || e.tqi < P.ex) { code = 'weak'; title = 'KUALITAS LEMAH (TQI RENDAH)'; }
   else if (near) { code = 'near'; title = `HATI-HATI: DEKAT ${dir === 1 ? 'RESISTANCE' : 'SUPPORT'}`; }
-  else if (majOk && e.tqi >= P.strong) { code = 'strong'; title = `KONFLUENSI KUAT ${side} ${arrow(dir)}`; }
+  else if ((P.d1 === 'required' ? majOk : true) && e.tqi >= P.strong) { code = 'strong'; title = `KONFLUENSI KUAT ${side} ${arrow(dir)}`; }
   else { code = 'valid'; title = `VALID ${side} (RISIKO SEDANG)`; }
-  return { code, title, side, dir, sig };
+  return { code, title, side, dir, sig, d1: j ? (majOk ? 'searah' : 'berlawanan') : null };
 }
 
 async function analyzeCoin(ex, pair, cfg) {
@@ -94,11 +94,11 @@ async function analyzeCoin(ex, pair, cfg) {
   }
   const I = lad.map(b => (b ? tfInfo(data[b], barMinutes(b), cfg.preset) : null));
   if (I.some(x => x && !x.ready)) throw new Error('data belum cukup untuk warmup indikator');
-  const sn = snrOf(I[2] || I[1]);
+  const sn = snrOf(I[2] || I[1], I[0].cs[I[0].cs.length - 1].close);
   const d = decide(I, lad, sn, cfg.P);
   const e = I[0];
   return {
-    pair, ok: true, exchange: ex, code: d.code, title: d.title, side: d.side, price: e.cs[e.cs.length - 1].close, snrTf: lad[2] || lad[1],
+    pair, ok: true, exchange: ex, d1: d.d1, code: d.code, title: d.title, side: d.side, price: e.cs[e.cs.length - 1].close, snrTf: lad[2] || lad[1],
     tf: Object.fromEntries(lad.map((b, i) => b && [b, { trend: I[i].trend, tqi: I[i].tqi, er: I[i].er, age: I[i].age }]).filter(Boolean)),
     snr: sn, flipT: e.flipT,
     levels: d.side === 'BUY' && e.levels ? { entry: e.levels.entry, sl: e.levels.sl, tp1: e.levels.tp[0], tp2: e.levels.tp[1], r1: e.levels.tpR[0], r2: e.levels.tpR[1] } : null,
@@ -121,6 +121,7 @@ const signalMsg = (r, cfg) => {
     `🟢 KONFLUENSI KUAT BUY — ${r.pair} (${cfg.bar}, ${r.exchange.toUpperCase()})`,
     `Flip ${lad[0]}: ${t[lad[0]].age} bar lalu | harga kini ${px(r.price)}`,
     L ? `Entry (close flip) ${px(L.entry)} | SL ${px(L.sl)} | TP1 ${px(L.tp1)} (${L.r1.toFixed(1)}R) | TP2 ${px(L.tp2)} (${L.r2.toFixed(1)}R)` : 'Level entry/SL/TP tidak tersedia (flip sebelum warmup)',
+    ...(r.d1 ? [`1D: ${r.d1 === 'searah' ? 'searah (keyakinan lebih tinggi)' : 'BERLAWANAN (counter-trend harian: pertimbangkan posisi lebih kecil)'}`] : []),
     `Tren: ${lad.filter(Boolean).map(b => `${b} ${arrow(t[b].trend)}`).join(' · ')} | TQI ${lad[0]} ${t[lad[0]].tqi.toFixed(2)}, ${lad[1]} ${t[lad[1]].tqi.toFixed(2)}`,
     `SnR ${r.snrTf}: resistance ${r.snr.res ? `${px(r.snr.res)} (${r.snr.dRes.toFixed(1)}×ATR)` : '-'} · support ${r.snr.sup ? `${px(r.snr.sup)} (${r.snr.dSup.toFixed(1)}×ATR)` : '-'}`,
     'Aturan belum divalidasi backtest. Bukan saran keuangan.',
@@ -169,7 +170,7 @@ async function doScan({ notify: doNotify = true, summary = true } = {}) {
       const { hour, date } = localParts(cfg.tz);
       if (hour === cfg.summaryHour && st.lastSummary !== date) {
         st.lastSummary = date;
-        const lines = results.map(r => (r.ok ? `${r.pair}${r.exchange !== cfg.exchange ? ` [${r.exchange.toUpperCase()}]` : ''}: ${r.title} | ${LAD[cfg.bar].filter(Boolean).map(b => `${b}${arrow(r.tf[b].trend)}`).join(' ')} TQI ${r.tf[LAD[cfg.bar][0]].tqi.toFixed(2)}` : `${r.pair}: ERROR ${r.error}`));
+        const lines = results.map(r => (r.ok ? `${r.pair}${r.exchange !== cfg.exchange ? ` [${r.exchange.toUpperCase()}]` : ''}: ${r.title} | ${LAD[cfg.bar].filter(Boolean).map(b => `${b}${arrow(r.tf[b].trend)}`).join(' ')} TQI ${r.tf[LAD[cfg.bar][0]].tqi.toFixed(2)}${r.d1 ? ` 1D${r.d1 === 'searah' ? '✓' : '✗'}` : ''}` : `${r.pair}: ERROR ${r.error}`));
         await notify(`📋 Ringkasan scan ${cfg.summaryHour}:00 (${cfg.bar}, ${cfg.exchange.toUpperCase()}, preset ${cfg.preset})\n${lines.join('\n')}`);
       }
     }

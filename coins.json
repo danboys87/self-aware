@@ -1,8 +1,9 @@
 {
-  "exchange": "bitget",
-  "fallback": "okx",
+  "exchange": "okx",
+  "fallback": "bitget",
   "bar": "1H",
   "preset": "Auto",
+  "d1": "label",
   "coins": [
     "ENA-USDT",
     "LINK-USDT",
@@ -13,22 +14,6 @@
     "EIGEN-USDT",
     "AERO-USDT",
     "SUI-USDT",
-    "UNI-USDT",
-    "RAY-USDT",
-    "JUP-USDT",
-    "XPL-USDT",
-    "TAO-USDT",
-    "INJ-USDT",
-    "LDO-USDT",
-    "PYTH-USDT",
-    "ATH-USDT",
-    "PUMP-USDT",
-    "SEI-USDT",
-    "ICP-USDT",
-    "PENGU-USDT",
-    "RENDER-USDT",
-    "VIRTUAL-USDT",
-    "XPL-USDT",
     "WLD-USDT"
   ]
 }
