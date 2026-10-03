@@ -1,6 +1,6 @@
 {
-  "exchange": "okx",
-  "fallback": "bitget",
+  "exchange": "bitget",
+  "fallback": "okx",
   "bar": "1H",
   "preset": "Auto",
   "coins": [
