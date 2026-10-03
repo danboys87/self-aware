@@ -43,6 +43,15 @@ tr.sec:nth-child(even) td{background:var(--row)}
 .legend{position:absolute;left:14px;top:12px;z-index:3;font-size:12px;pointer-events:none;color:var(--muted)}
 .legend b{font-weight:500;color:var(--text)}
 a{color:var(--head)}
+.mtf td,.mtf th{text-align:right}.mtf td:first-child,.mtf th:first-child{text-align:left}
+.dec{padding:14px 16px;text-align:center;border-top:1px solid var(--line)}
+.dec .dt{font-size:12px;color:var(--muted);margin-bottom:4px}.dec h2{margin:0 0 4px;font-size:19px;font-weight:600}.dec p{margin:0;font-size:13px}
+.chk{list-style:none;margin:10px 0 0;padding:0;text-align:left;font-size:12.5px;display:grid;gap:3px}
+.chk li{color:var(--muted)}.chk li.ok::before{content:"✓ ";color:var(--bull)}.chk li.no::before{content:"✗ ";color:var(--bear)}
+.snr{padding:8px 12px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line)}
+.disc{font-size:11.5px;color:var(--muted);margin-top:10px;text-align:left}
+.mtfset{padding:8px 12px;border-top:1px solid var(--line);margin:0}
+.mtfset .bar2{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}.mtfset input{width:78px}
 .note{color:var(--muted);font-size:12px;padding:0 4px 10px}
 details{margin-bottom:12px}summary{cursor:pointer;color:var(--muted);font-size:12.5px}
 textarea{width:100%;min-height:90px;margin-top:6px}
@@ -71,6 +80,14 @@ textarea{width:100%;min-height:90px;margin-top:6px}
   <div>
     <div class="card chartwrap"><div id="legend" class="legend" aria-live="off"></div><div id="chart" role="img" aria-label="Grafik candle dengan garis SuperTrend adaptif dan sinyal"></div>
     <p class="note">Garis hijau/merah = SuperTrend adaptif (naik/turun). Panah = sinyal. Garis putus-putus = SL, TP1, TP2 dari sinyal terakhir; garis abu-abu = entry. Waktu pada grafik: UTC.</p></div>
+    <div class="card" id="mtfcard"><table class="mtf" id="mtftab"></table><div id="mtfsnr" class="snr"></div><div id="mtfdec"></div>
+      <details class="mtfset"><summary>Ambang analisis (bisa diubah)</summary><div class="bar2">
+        <label>Min TQI struktur <input id="mTqiMid" type="number" step="0.05" min="0" max="1" value="0.40"></label>
+        <label>Min TQI eksekusi <input id="mTqiEx" type="number" step="0.05" min="0" max="1" value="0.40"></label>
+        <label>TQI kuat (eksekusi) <input id="mTqiStrong" type="number" step="0.05" min="0" max="1" value="0.50"></label>
+        <label>Sinyal baru ≤ (bar) <input id="mFresh" type="number" step="1" min="0" value="3"></label>
+        <label>Dekat SnR ≤ (×ATR) <input id="mSnr" type="number" step="0.1" min="0" value="1.0"></label>
+      </div></details></div>
   </div>
 </div>
 <p class="note">Data diambil lewat server setiap 30 detik (hanya candle yang sudah close). Jika server tidak terjangkau, halaman memakai data demo sintetik. Dashboard ini hanya alat bantu analisis, bukan saran keuangan.</p>
@@ -124,7 +141,7 @@ function run(cs,cfg){
   if((flipUp||flipDn)&&i>=warm){const e=C[i];
    if(flipUp){const sl=Math.min((isFinite(pL)?pL:L[i])-c.slMult*atrV,e-c.slMult*atrV),rk=e-sl;sig={side:'buy',entry:e,sl,risk:rk,tpR:[r1,r2],tp:[e+rk*r1,e+rk*r2]}}
    else{const sl=Math.max((isFinite(pH)?pH:H[i])+c.slMult*atrV,e+c.slMult*atrV),rk=sl-e;sig={side:'sell',entry:e,sl,risk:rk,tpR:[r1,r2],tp:[e-rk*r1,e-rk*r2]}}}
-  bars.push({i,trend:tr_[i],st:tr_[i]===1?lw[i]:up[i],tqi,er,vr,vz,tEr,tVol,tSt,tMo,sc,r1,r2,sig,age:i-ts});
+  bars.push({i,trend:tr_[i],st:tr_[i]===1?lw[i]:up[i],tqi,er,vr,vz,tEr,tVol,tSt,tMo,sc,r1,r2,sig,age:i-ts,ra:ra[i]});
  }
  return{bars,warm,c};
 }
@@ -151,6 +168,7 @@ function render(){
  $('#dash').innerHTML=h;
  $('#meta').textContent=`${n} bar · ${new Date(cs[0].t).toISOString().slice(0,10)} s/d ${new Date(cs[n-1].t).toISOString().slice(0,10)} · warmup ${warm} bar · ${S.src}`;
  chart(cs,bars,ls);
+ renderMTF();
 }
 
 let CH=null,sC,segs=[],pLines=[],chartKey='',byTime=new Map();
@@ -199,6 +217,51 @@ function chart(cs,bars,ls){
  $('#legend').innerHTML=legendHtml({k:cs[cs.length-1],b:bars[bars.length-1]});
 }
 
+function tfInfo(cs,tfm){
+ const {bars,warm}=run(cs,{preset:$('#preset').value,tpMode:'fixed',tf:tfm});
+ const n=bars.length,b=bars[n-1];let k=n-1;while(k>0&&bars[k-1].trend===b.trend)k--;
+ return{b,trend:b.trend,tqi:b.tqi,er:b.er,age:n-1-k,ready:n>warm,cs};
+}
+// SnR (proksi terukur): swing high/low terdekat (pivot 5 bar kiri-kanan, 120 bar terakhir) relatif terhadap ATR TF tersebut
+function snrOf(I){
+ const cs=I.cs,n=cs.length,L=5,from=Math.max(L,n-120),p0=cs[n-1].close;let res=Infinity,sup=-Infinity;
+ for(let i=from;i<n-L;i++){let ph=true,pl=true;
+  for(let k=1;k<=L;k++){if(!(cs[i].high>cs[i-k].high&&cs[i].high>cs[i+k].high))ph=false;if(!(cs[i].low<cs[i-k].low&&cs[i].low<cs[i+k].low))pl=false}
+  if(ph&&cs[i].high>p0)res=Math.min(res,cs[i].high);if(pl&&cs[i].low<p0)sup=Math.max(sup,cs[i].low)}
+ const a=I.b.ra,hr=isFinite(res),hs=isFinite(sup);
+ return{res:hr?res:null,sup:hs?sup:null,dRes:hr&&a>0?(res-p0)/a:null,dSup:hs&&a>0?(p0-sup)/a:null};
+}
+function renderMTF(){
+ const T=$('#mtftab'),D=$('#mtfdec'),N=$('#mtfsnr');
+ const msg=t=>{T.innerHTML='';N.innerHTML='';D.innerHTML=`<div class="dec"><div class="mu">${t}</div></div>`};
+ if(!S||!S.mtf)return msg('Analisis multi-timeframe butuh data live (OKX/Bitget) dengan Bar 15m, 30m, 1H, atau 4H.');
+ if(S.mtf.err)return msg('Gagal mengambil candle timeframe lebih besar: '+S.mtf.err);
+ const {lad,tf}=S.mtf,I=lad.map(b=>b?tfInfo(tf[b],TFM[b]):null),[e,m,j]=I;
+ if(I.some(x=>x&&!x.ready))return msg('Data belum cukup untuk warmup indikator di salah satu timeframe.');
+ const P={mid:num('mTqiMid',.4),ex:num('mTqiEx',.4),strong:num('mTqiStrong',.5),fresh:num('mFresh',3),snr:num('mSnr',1)};
+ const tq=v=>v>.6?'up':v>.35?'wn':'dn',dirT=t=>t===1?'Bullish ▲':'Bearish ▼',dc=t=>t===1?'up':'dn';
+ let h='<tr><th>Timeframe</th><th>Tren</th><th>TQI</th><th>ER</th><th>Umur tren</th></tr>';
+ [2,1,0].forEach(k=>{const x=I[k];if(!x)return;h+=`<tr><td>${lad[k]} (${ROLE[k]})</td><td class="${dc(x.trend)}">${dirT(x.trend)}</td><td class="${tq(x.tqi)}">${f(x.tqi)}</td><td>${f(x.er)}</td><td>${x.age} bar</td></tr>`});
+ T.innerHTML=h;
+ const sT=j||m,sn=snrOf(sT),sl=lad[j?2:1];
+ N.innerHTML=`SnR ${sl}: resistance ${sn.res?px(sn.res)+' ('+f(sn.dRes,1)+'×ATR)':'tidak ada swing di atas'} · support ${sn.sup?px(sn.sup)+' ('+f(sn.dSup,1)+'×ATR)':'tidak ada swing di bawah'}`;
+ const sig=e.age<=P.fresh,dir=e.trend,side=dir===1?'BUY':'SELL',ex_=lad[0],mi=lad[1];
+ const near=dir===1?(sn.dRes!==null&&sn.dRes<=P.snr):(sn.dSup!==null&&sn.dSup<=P.snr),aligned=m.trend===dir,majOk=j?j.trend===dir:true;
+ const ck=[[sig,sig?`Sinyal ${side} baru di ${ex_}: flip ${e.age} bar lalu`:`Tidak ada sinyal baru di ${ex_}: tren ${dirT(dir)} sudah berjalan ${e.age} bar (batas ≤ ${P.fresh})`],
+  [aligned,`${mi} ${aligned?'searah':'berlawanan'} (${dirT(m.trend)})`]];
+ if(j)ck.push([majOk,`${lad[2]} ${majOk?'searah':'berlawanan'} (${dirT(j.trend)})`]);
+ ck.push([m.tqi>=P.mid,`TQI ${mi} ${f(m.tqi)} (min ${f(P.mid)})`],[e.tqi>=P.ex,`TQI ${ex_} ${f(e.tqi)} (min ${f(P.ex)})`],
+  [!near,near?`Harga dekat ${dir===1?'resistance':'support'} ${sl} (≤ ${f(P.snr,1)}×ATR)`:`Tidak dekat ${dir===1?'resistance':'support'} ${sl}`]);
+ let c,t,d;
+ const spot=dir===-1?' Spot: SELL berarti tutup posisi long, bukan membuka short.':'';
+ if(!sig){c='wn';t='WAIT / BELUM ADA SINYAL BARU';d=`Belum ada flip baru di ${ex_}. Tren ${dirT(dir)} sudah berjalan ${e.age} bar; masuk sekarang berarti entry terlambat.`}
+ else if(!aligned){c='dn';t='DITOLAK: MELAWAN TREN '+mi.toUpperCase();d=`Sinyal ${side} ${ex_} berlawanan dengan tren ${mi} (${dirT(m.trend)}). Hindari counter-trend.`+spot}
+ else if(m.tqi<P.mid||e.tqi<P.ex){c='wn';t='KUALITAS LEMAH (TQI RENDAH)';d=`TQI di bawah ambang (${mi} ${f(m.tqi)}, ${ex_} ${f(e.tqi)}). Kondisi cenderung choppy, risiko whipsaw lebih tinggi.`}
+ else if(near){c='wn';t=`HATI-HATI: DEKAT ${dir===1?'RESISTANCE':'SUPPORT'}`;d=`${mi} dan ${ex_} searah, tetapi harga dekat ${dir===1?'resistance':'support'} ${sl}. Pertimbangkan ukuran posisi lebih kecil atau tunggu breakout.`}
+ else if(majOk&&e.tqi>=P.strong){c=dc(dir);t=`KONFLUENSI KUAT ${side} ${dir===1?'▲':'▼'}`;d=`${lad.filter(Boolean).join(' + ')} searah dan TQI ${ex_} ≥ ${f(P.strong)}.`+spot}
+ else{c=dc(dir);t=`VALID ${side} (RISIKO SEDANG)`;d=majOk?`Sinyal ${ex_} searah dengan ${mi}; TQI ${ex_} belum mencapai ${f(P.strong)}.`:`Sinyal ${ex_} searah dengan ${mi}, tetapi ${lad[2]} berlawanan.`+spot}
+ D.innerHTML=`<div class="dec"><div class="dt">REKOMENDASI EKSEKUSI</div><h2 class="${c}">${t}</h2><p>${d}</p><ul class="chk">${ck.map(([ok,x])=>`<li class="${ok?'ok':'no'}">${x}</li>`).join('')}</ul><p class="disc">Aturan dan ambang ini belum divalidasi backtest. "Kuat" berarti syarat terpenuhi, bukan jaminan probabilitas. SnR dihitung dari swing high/low (proksi), bukan analisis manual.</p></div>`;
+}
 function demo(){
  let p=100,t=Date.UTC(2026,0,1),sd_=Math.floor(Math.random()*1e6)+1;const r=()=>(sd_=(sd_*1664525+1013904223)%4294967296)/4294967296,cs=[];
  for(let i=0;i<700;i++){const reg=Math.floor(i/110)%3,dr=reg===0?.16:reg===2?-.16:0,o=p,c=o+dr+(r()-.5)*2.2;
@@ -217,13 +280,22 @@ const TOKEN=new URLSearchParams(location.search).get('token')||'';
 const TFM={'5m':5,'15m':15,'30m':30,'1H':60,'4H':240,'1D':1440};
 const qs=o=>{const p=new URLSearchParams(o);if(TOKEN)p.set('token',TOKEN);return p.toString()};
 function setLive(on){clearInterval(timer);timer=on?setInterval(pull,30000):null;const b=$('#livebtn');b.textContent='Live: '+(on?'ON':'OFF');b.setAttribute('aria-pressed',on)}
+const LAD={'15m':['15m','1H','4H'],'30m':['30m','4H','1D'],'1H':['1H','4H','1D'],'4H':['4H','1D',null]}; // [eksekusi, struktur, mayor]
+const ROLE=['eksekusi','struktur','mayor'],num=(id,d)=>{const v=parseFloat($('#'+id).value);return isFinite(v)?v:d};
+async function getCandles(ex,pair,bar){
+ const r=await fetch('/api/candles?'+qs({ex,pair,bar,limit:600})),j=await r.json();
+ if(!r.ok||j.error)throw new Error(j.error||('HTTP '+r.status));
+ if(j.candles.length<80)throw new Error('candle '+bar+' terlalu sedikit ('+j.candles.length+')');
+ return j.candles;
+}
 async function pull(){
  const ex=$('#ex').value,pair=$('#pair').value.trim(),bar=$('#bar').value;
  try{
-  const r=await fetch('/api/candles?'+qs({ex,pair,bar,limit:600})),j=await r.json();
-  if(!r.ok||j.error)throw new Error(j.error||('HTTP '+r.status));
-  if(j.candles.length<80)throw new Error('candle terlalu sedikit ('+j.candles.length+')');
-  S={cs:j.candles,src:`${ex.toUpperCase()} ${pair.toUpperCase()} ${bar} · live ${new Date().toLocaleTimeString()}`};
+  const main=await getCandles(ex,pair,bar);
+  const lad=LAD[bar];let mtf=null;
+  if(lad){try{const [mid,maj]=await Promise.all([getCandles(ex,pair,lad[1]),lad[2]?getCandles(ex,pair,lad[2]):null]);
+    mtf={lad,tf:{[lad[0]]:main,[lad[1]]:mid,...(lad[2]?{[lad[2]]:maj}:{})}}}catch(e){mtf={err:e.message}}}
+  S={cs:main,mtf,src:`${ex.toUpperCase()} ${pair.toUpperCase()} ${bar} · live ${new Date().toLocaleTimeString()}`};
   $('#tf').value=TFM[bar];render();
  }catch(e){
   if(!S){demo();$('#meta').textContent='Server/exchange tidak terjangkau ('+e.message+'). Menampilkan data demo.';}
@@ -243,6 +315,7 @@ function renderPos(j){
  $('#pos').innerHTML=h;
 }
 ['preset','tp','tf'].forEach(id=>$('#'+id).addEventListener('input',()=>S&&render()));
+['mTqiMid','mTqiEx','mTqiStrong','mFresh','mSnr'].forEach(id=>$('#'+id).addEventListener('input',()=>S&&renderMTF()));
 ['ex','pair','bar'].forEach(id=>$('#'+id).addEventListener('change',()=>{setLive(true);pull()}));
 $('#livebtn').onclick=()=>{const on=!timer;setLive(on);if(on)pull()};
 $('#demo').onclick=()=>{setLive(false);demo()};
