@@ -92,6 +92,7 @@ textarea{width:100%;min-height:90px;margin-top:6px}
         <label>TQI kuat (eksekusi) <input id="mTqiStrong" type="number" step="0.05" min="0" max="1" value="0.50"></label>
         <label>Sinyal baru ≤ (bar) <input id="mFresh" type="number" step="1" min="0" value="3"></label>
         <label>Dekat SnR ≤ (×ATR) <input id="mSnr" type="number" step="0.1" min="0" value="1.0"></label>
+        <label>Peran 1D <select id="mD1"><option value="label">Label (tidak memblokir)</option><option value="required">Syarat wajib</option></select></label>
       </div></details></div>
   </div>
 </div>
@@ -228,8 +229,8 @@ function tfInfo(cs,tfm){
  return{b,trend:b.trend,tqi:b.tqi,er:b.er,age:n-1-k,ready:n>warm,cs};
 }
 // SnR (proksi terukur): swing high/low terdekat (pivot 5 bar kiri-kanan, 120 bar terakhir) relatif terhadap ATR TF tersebut
-function snrOf(I){
- const cs=I.cs,n=cs.length,L=5,from=Math.max(L,n-120),p0=cs[n-1].close;let res=Infinity,sup=-Infinity;
+function snrOf(I,p0){ // p0 = harga terkini (close bar eksekusi), bukan close harian kemarin
+ const cs=I.cs,n=cs.length,L=5,from=Math.max(L,n-120);let res=Infinity,sup=-Infinity;
  for(let i=from;i<n-L;i++){let ph=true,pl=true;
   for(let k=1;k<=L;k++){if(!(cs[i].high>cs[i-k].high&&cs[i].high>cs[i+k].high))ph=false;if(!(cs[i].low<cs[i-k].low&&cs[i].low<cs[i+k].low))pl=false}
   if(ph&&cs[i].high>p0)res=Math.min(res,cs[i].high);if(pl&&cs[i].low<p0)sup=Math.max(sup,cs[i].low)}
@@ -243,12 +244,12 @@ function renderMTF(){
  if(S.mtf.err)return msg('Gagal mengambil candle timeframe lebih besar: '+S.mtf.err);
  const {lad,tf}=S.mtf,I=lad.map(b=>b?tfInfo(tf[b],TFM[b]):null),[e,m,j]=I;
  if(I.some(x=>x&&!x.ready))return msg('Data belum cukup untuk warmup indikator di salah satu timeframe.');
- const P={mid:num('mTqiMid',.4),ex:num('mTqiEx',.4),strong:num('mTqiStrong',.5),fresh:num('mFresh',3),snr:num('mSnr',1)};
+ const P={mid:num('mTqiMid',.4),ex:num('mTqiEx',.4),strong:num('mTqiStrong',.5),fresh:num('mFresh',3),snr:num('mSnr',1),d1:$('#mD1').value||'label'};
  const tq=v=>v>.6?'up':v>.35?'wn':'dn',dirT=t=>t===1?'Bullish ▲':'Bearish ▼',dc=t=>t===1?'up':'dn';
  let h='<tr><th>Timeframe</th><th>Tren</th><th>TQI</th><th>ER</th><th>Umur tren</th></tr>';
  [2,1,0].forEach(k=>{const x=I[k];if(!x)return;h+=`<tr><td>${lad[k]} (${ROLE[k]})</td><td class="${dc(x.trend)}">${dirT(x.trend)}</td><td class="${tq(x.tqi)}">${f(x.tqi)}</td><td>${f(x.er)}</td><td>${x.age} bar</td></tr>`});
  T.innerHTML=h;
- const sT=j||m,sn=snrOf(sT),sl=lad[j?2:1];
+ const sT=j||m,sn=snrOf(sT,e.cs[e.cs.length-1].close),sl=lad[j?2:1];
  N.innerHTML=`SnR ${sl}: resistance ${sn.res?px(sn.res)+' ('+f(sn.dRes,1)+'×ATR)':'tidak ada swing di atas'} · support ${sn.sup?px(sn.sup)+' ('+f(sn.dSup,1)+'×ATR)':'tidak ada swing di bawah'}`;
  const sig=e.age<=P.fresh,dir=e.trend,side=dir===1?'BUY':'SELL',ex_=lad[0],mi=lad[1];
  const near=dir===1?(sn.dRes!==null&&sn.dRes<=P.snr):(sn.dSup!==null&&sn.dSup<=P.snr),aligned=m.trend===dir,majOk=j?j.trend===dir:true;
@@ -263,9 +264,9 @@ function renderMTF(){
  else if(!aligned){c='dn';t='DITOLAK: MELAWAN TREN '+mi.toUpperCase();d=`Sinyal ${side} ${ex_} berlawanan dengan tren ${mi} (${dirT(m.trend)}). Hindari counter-trend.`+spot}
  else if(m.tqi<P.mid||e.tqi<P.ex){c='wn';t='KUALITAS LEMAH (TQI RENDAH)';d=`TQI di bawah ambang (${mi} ${f(m.tqi)}, ${ex_} ${f(e.tqi)}). Kondisi cenderung choppy, risiko whipsaw lebih tinggi.`}
  else if(near){c='wn';t=`HATI-HATI: DEKAT ${dir===1?'RESISTANCE':'SUPPORT'}`;d=`${mi} dan ${ex_} searah, tetapi harga dekat ${dir===1?'resistance':'support'} ${sl}. Pertimbangkan ukuran posisi lebih kecil atau tunggu breakout.`}
- else if(majOk&&e.tqi>=P.strong){c=dc(dir);t=`KONFLUENSI KUAT ${side} ${dir===1?'▲':'▼'}`;d=`${lad.filter(Boolean).join(' + ')} searah dan TQI ${ex_} ≥ ${f(P.strong)}.`+spot}
- else{c=dc(dir);t=`VALID ${side} (RISIKO SEDANG)`;d=majOk?`Sinyal ${ex_} searah dengan ${mi}; TQI ${ex_} belum mencapai ${f(P.strong)}.`:`Sinyal ${ex_} searah dengan ${mi}, tetapi ${lad[2]} berlawanan.`+spot}
- D.innerHTML=`<div class="dec"><div class="dt">REKOMENDASI EKSEKUSI</div><h2 class="${c}">${t}</h2><p>${d}</p><ul class="chk">${ck.map(([ok,x])=>`<li class="${ok?'ok':'no'}">${x}</li>`).join('')}</ul><p class="disc">Aturan dan ambang ini belum divalidasi backtest. "Kuat" berarti syarat terpenuhi, bukan jaminan probabilitas. SnR dihitung dari swing high/low (proksi), bukan analisis manual.</p></div>`;
+ else if((P.d1==='required'?majOk:true)&&e.tqi>=P.strong){c=dc(dir);t=`KONFLUENSI KUAT ${side} ${dir===1?'▲':'▼'}`;d=`${lad.filter(Boolean).join(' + ')} searah dan TQI ${ex_} ≥ ${f(P.strong)}.`+spot}
+ else{c=dc(dir);t=`VALID ${side} (RISIKO SEDANG)`;d=e.tqi<P.strong?`Sinyal ${ex_} searah dengan ${mi}; TQI ${ex_} belum mencapai ${f(P.strong)}.`:`Sinyal ${ex_} searah dengan ${mi}, tetapi ${lad[2]} berlawanan (1D diset sebagai syarat wajib).`+spot}
+ D.innerHTML=`<div class="dec"><div class="dt">REKOMENDASI EKSEKUSI</div><h2 class="${c}">${t}</h2><p>${d}</p>${j?`<p class="${majOk?(dir===1?'up':'dn'):'wn'}">Label 1D: ${majOk?'searah':'BERLAWANAN (counter-trend harian, pertimbangkan posisi lebih kecil)'}</p>`:''}<ul class="chk">${ck.map(([ok,x])=>`<li class="${ok?'ok':'no'}">${x}</li>`).join('')}</ul><p class="disc">Aturan dan ambang ini belum divalidasi backtest. "Kuat" berarti syarat terpenuhi, bukan jaminan probabilitas. SnR dihitung dari swing high/low (proksi), bukan analisis manual.</p></div>`;
 }
 function demo(){
  let p=100,t=Date.UTC(2026,0,1),sd_=Math.floor(Math.random()*1e6)+1;const r=()=>(sd_=(sd_*1664525+1013904223)%4294967296)/4294967296,cs=[];
@@ -297,7 +298,7 @@ function renderScan(j){
   const sel=cur===r.pair.toUpperCase()?' class="sel"':'';
   if(!r.ok){h+=`<tr data-pair="${esc(r.pair)}"${sel}><td>${esc(r.pair)}</td><td class="dn" colspan="${lad.length+3}">Error: ${esc(r.error)}</td></tr>`;return}
   const x0=r.tf[lad[0]],rx=r.exchange||j.exchange,tag=rx!==j.exchange?` <span class="mu">[${esc(rx.toUpperCase())}]</span>`:'';
-  h+=`<tr data-pair="${esc(r.pair)}" data-ex="${esc(rx)}"${sel}><td>${esc(r.pair)}${tag}</td><td class="${SCL[r.code]}">${esc(r.title)}</td>${lad.map(b=>{const x=r.tf[b];return `<td class="${x.trend===1?'up':'dn'}">${x.trend===1?'▲':'▼'} ${x.age}b</td>`}).join('')}<td class="${x0.tqi>.6?'up':x0.tqi>.35?'wn':'dn'}">${f(x0.tqi)}</td><td>${px(r.price)}</td></tr>`});
+  h+=`<tr data-pair="${esc(r.pair)}" data-ex="${esc(rx)}"${sel}><td>${esc(r.pair)}${tag}</td><td class="${SCL[r.code]}">${esc(r.title)}${r.d1?` <span class="${r.d1==='searah'?'up':'wn'}">· 1D ${r.d1==='searah'?'✓':'✗'}</span>`:''}</td>${lad.map(b=>{const x=r.tf[b];return `<td class="${x.trend===1?'up':'dn'}">${x.trend===1?'▲':'▼'} ${x.age}b</td>`}).join('')}<td class="${x0.tqi>.6?'up':x0.tqi>.35?'wn':'dn'}">${f(x0.tqi)}</td><td>${px(r.price)}</td></tr>`});
  $('#scantab').innerHTML=h;
  $('#scaninfo').textContent=`Scan ${new Date(j.updated).toLocaleTimeString()} · ${j.exchange.toUpperCase()} · ${j.bar} · preset ${j.preset} · klik koin untuk melihat grafik`;
 }
