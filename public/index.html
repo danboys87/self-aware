@@ -43,6 +43,10 @@ tr.sec:nth-child(even) td{background:var(--row)}
 .legend{position:absolute;left:14px;top:12px;z-index:3;font-size:12px;pointer-events:none;color:var(--muted)}
 .legend b{font-weight:500;color:var(--text)}
 a{color:var(--head)}
+.scan td:nth-child(2),.scan th:nth-child(2){text-align:left}
+.scan tr[data-pair]{cursor:pointer}.scan tr[data-pair]:hover td{background:var(--row)}
+.scan tr.sel td{box-shadow:inset 0 0 0 9999px color-mix(in srgb,var(--head) 16%,transparent)}
+#scancard{overflow-x:auto}.scanbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
 .mtf td,.mtf th{text-align:right}.mtf td:first-child,.mtf th:first-child{text-align:left}
 .dec{padding:14px 16px;text-align:center;border-top:1px solid var(--line)}
 .dec .dt{font-size:12px;color:var(--muted);margin-bottom:4px}.dec h2{margin:0 0 4px;font-size:19px;font-weight:600}.dec p{margin:0;font-size:13px}
@@ -62,7 +66,7 @@ textarea{width:100%;min-height:90px;margin-top:6px}
 <h1>Self-Aware Trend System: Dashboard Live</h1>
 <p class="sub" id="meta"></p>
 <div class="bar">
-  <label>Preset <select id="preset"><option>Crypto 24/7</option><option>Auto</option><option>Default</option><option>Scalping</option><option>Swing</option></select></label>
+  <label>Preset <select id="preset"><option>Auto</option><option>Crypto 24/7</option><option>Default</option><option>Scalping</option><option>Swing</option></select></label>
   <label>TP <select id="tp"><option value="fixed">Fixed 1R / 2R</option><option value="dynamic">Dynamic</option></select></label>
   <label>TF (menit) <input id="tf" type="number" value="60" min="1"></label>
   <label>Exchange <select id="ex"><option value="okx">OKX</option><option value="bitget">Bitget</option></select></label>
@@ -74,6 +78,7 @@ textarea{width:100%;min-height:90px;margin-top:6px}
   <label>CSV <input id="file" type="file" accept=".csv,text/csv"></label>
 </div>
 <details><summary>Atau tempel CSV (time,open,high,low,close,volume)</summary><textarea id="paste" placeholder="time,open,high,low,close,volume"></textarea><button id="load">Pakai data ini</button></details>
+<div class="card" id="scancard" hidden><table class="mtf scan" id="scantab"></table><div class="snr scanbar"><span id="scaninfo"></span><button id="scanbtn">Scan sekarang</button></div></div>
 <div class="grid">
   <div><div class="card"><table id="dash"></table></div>
   <div class="card" id="poscard" hidden><table id="pos"></table></div></div>
@@ -280,6 +285,23 @@ const TOKEN=new URLSearchParams(location.search).get('token')||'';
 const TFM={'5m':5,'15m':15,'30m':30,'1H':60,'4H':240,'1D':1440};
 const qs=o=>{const p=new URLSearchParams(o);if(TOKEN)p.set('token',TOKEN);return p.toString()};
 function setLive(on){clearInterval(timer);timer=on?setInterval(pull,30000):null;const b=$('#livebtn');b.textContent='Live: '+(on?'ON':'OFF');b.setAttribute('aria-pressed',on)}
+const ORD={strong:0,valid:1,near:2,weak:3,wait:4,rejected:5},SCL={strong:'up',valid:'up',near:'wn',weak:'wn',wait:'mu',rejected:'dn'};
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let SCANJ=null;
+function renderScan(j){
+ SCANJ=j;$('#scancard').hidden=false;const rs=j.results||[];
+ if(!rs.length){$('#scantab').innerHTML='<tr><th>Hasil scan</th></tr><tr><td class="mu">Belum ada hasil. Isi coins.json lalu klik "Scan sekarang".</td></tr>';$('#scaninfo').textContent='';return}
+ const lad=(j.lad||[]).filter(Boolean),cur=$('#pair').value.trim().toUpperCase();
+ let h=`<tr><th>Koin</th><th>Status</th>${lad.map(b=>`<th>${b}</th>`).join('')}<th>TQI ${lad[0]}</th><th>Harga</th></tr>`;
+ [...rs].sort((a,b)=>(a.ok?ORD[a.code]:9)-(b.ok?ORD[b.code]:9)).forEach(r=>{
+  const sel=cur===r.pair.toUpperCase()?' class="sel"':'';
+  if(!r.ok){h+=`<tr data-pair="${esc(r.pair)}"${sel}><td>${esc(r.pair)}</td><td class="dn" colspan="${lad.length+3}">Error: ${esc(r.error)}</td></tr>`;return}
+  const x0=r.tf[lad[0]],rx=r.exchange||j.exchange,tag=rx!==j.exchange?` <span class="mu">[${esc(rx.toUpperCase())}]</span>`:'';
+  h+=`<tr data-pair="${esc(r.pair)}" data-ex="${esc(rx)}"${sel}><td>${esc(r.pair)}${tag}</td><td class="${SCL[r.code]}">${esc(r.title)}</td>${lad.map(b=>{const x=r.tf[b];return `<td class="${x.trend===1?'up':'dn'}">${x.trend===1?'▲':'▼'} ${x.age}b</td>`}).join('')}<td class="${x0.tqi>.6?'up':x0.tqi>.35?'wn':'dn'}">${f(x0.tqi)}</td><td>${px(r.price)}</td></tr>`});
+ $('#scantab').innerHTML=h;
+ $('#scaninfo').textContent=`Scan ${new Date(j.updated).toLocaleTimeString()} · ${j.exchange.toUpperCase()} · ${j.bar} · preset ${j.preset} · klik koin untuk melihat grafik`;
+}
+async function pullScan(){try{const r=await fetch('/api/scan?'+qs({}));if(!r.ok)return;renderScan(await r.json())}catch{}}
 const LAD={'15m':['15m','1H','4H'],'30m':['30m','4H','1D'],'1H':['1H','4H','1D'],'4H':['4H','1D',null]}; // [eksekusi, struktur, mayor]
 const ROLE=['eksekusi','struktur','mayor'],num=(id,d)=>{const v=parseFloat($('#'+id).value);return isFinite(v)?v:d};
 async function getCandles(ex,pair,bar){
@@ -301,7 +323,7 @@ async function pull(){
   if(!S){demo();$('#meta').textContent='Server/exchange tidak terjangkau ('+e.message+'). Menampilkan data demo.';}
   else $('#meta').textContent='Gagal ambil data: '+e.message+' (menampilkan data terakhir)';
  }
- pullPos();
+ pullPos();pullScan();
 }
 async function pullPos(){
  try{const r=await fetch('/api/positions?'+qs({}));if(!r.ok)return;renderPos(await r.json())}catch{}
@@ -315,6 +337,17 @@ function renderPos(j){
  $('#pos').innerHTML=h;
 }
 ['preset','tp','tf'].forEach(id=>$('#'+id).addEventListener('input',()=>S&&render()));
+$('#scantab').addEventListener('click',e=>{
+ const tr=e.target&&e.target.closest&&e.target.closest('tr[data-pair]');if(!tr)return;
+ $('#pair').value=tr.dataset.pair;if(SCANJ){$('#ex').value=tr.dataset.ex||SCANJ.exchange;$('#bar').value=SCANJ.bar;renderScan(SCANJ)}
+ setLive(true);pull();const c=$('#chart');if(c.scrollIntoView)c.scrollIntoView({behavior:'smooth',block:'center'});
+});
+$('#scanbtn').onclick=async()=>{
+ const b=$('#scanbtn');b.disabled=true;b.textContent='Memindai...';
+ try{const r=await fetch('/api/scan/run?'+qs({}),{method:'POST'}),j=await r.json();if(!r.ok)throw new Error(j.error||('HTTP '+r.status));renderScan(j)}
+ catch(e){$('#scaninfo').textContent='Scan gagal: '+e.message}
+ b.disabled=false;b.textContent='Scan sekarang';
+};
 ['mTqiMid','mTqiEx','mTqiStrong','mFresh','mSnr'].forEach(id=>$('#'+id).addEventListener('input',()=>S&&renderMTF()));
 ['ex','pair','bar'].forEach(id=>$('#'+id).addEventListener('change',()=>{setLive(true);pull()}));
 $('#livebtn').onclick=()=>{const on=!timer;setLive(on);if(on)pull()};
