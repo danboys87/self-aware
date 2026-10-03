@@ -10,12 +10,15 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { fetchCandles } = require('./data');
+const scanner = require('./scanner');
 
 const PORT = +(process.env.PORT || 3000);
 const TOKEN = process.env.DASH_TOKEN || '';
 const STATE_FILE = process.env.STATE_FILE || './state.json';
 const BARS = new Set(['5m', '15m', '30m', '1H', '4H', '1D']);
 const EXS = new Set(['okx', 'bitget']);
+const SCAN_FILE = process.env.SCAN_FILE || './scan.json';
+let lastManualScan = 0;
 const CACHE_MS = 20000;
 const VENDOR = { 'lightweight-charts.standalone.production.js': 'application/javascript; charset=utf-8', 'LICENSE-lightweight-charts.txt': 'text/plain; charset=utf-8' };
 const cache = new Map(); // key -> { ts, p: Promise }
@@ -75,6 +78,17 @@ http.createServer(async (req, res) => {
         try { st = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); } catch { /* belum ada state */ }
         const positions = Object.entries(st.positions || {}).filter(([, v]) => v).map(([pair, v]) => ({ pair, ...v }));
         return send(res, 200, { positions, closed: (st.closed || []).slice(-20).reverse(), lastBar: st.lastBar || {} });
+      }
+
+      if (url.pathname === '/api/scan' && req.method === 'GET') {
+        let scan = { results: [] };
+        try { scan = JSON.parse(fs.readFileSync(SCAN_FILE, 'utf8')); } catch { /* belum ada hasil scan */ }
+        return send(res, 200, scan);
+      }
+      if (url.pathname === '/api/scan/run' && req.method === 'POST') {
+        if (Date.now() - lastManualScan < 30000) return send(res, 429, { error: 'tunggu 30 detik antar scan manual' });
+        lastManualScan = Date.now();
+        return send(res, 200, await scanner.runScan({ summary: false }));
       }
     }
     send(res, 404, { error: 'tidak ditemukan' });

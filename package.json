@@ -1,13 +1,17 @@
 {
   "name": "sats-bot",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Port JavaScript dari Self-Aware Trend System (SATS): backtest, paper bot, dashboard live (OKX/Bitget)",
   "scripts": {
     "start": "node start.js",
     "dashboard": "node server.js",
     "backtest": "node backtest.js",
-    "bot": "node bot.js"
+    "bot": "node bot.js",
+    "scan": "node scanner.js",
+    "scan:watch": "node scanner.js --watch"
   },
-  "engines": { "node": ">=18" }
+  "engines": {
+    "node": ">=18"
+  }
 }

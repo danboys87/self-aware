@@ -216,7 +216,7 @@ function runSATS(candles, cfg = {}) {
 
     bars.push({
       i, t: candles[i].t, trend: trend[i], tqi, er, volRatio, atr: atrValue,
-      stLine: trend[i] === 1 ? lower[i] : upper[i], flipUp, flipDown, signal,
+      stLine: trend[i] === 1 ? lower[i] : upper[i], flipUp, flipDown, signal, ra: rawAtr[i],
     });
   }
   return { bars, warmup, params: c };

@@ -1,0 +1,18 @@
+{
+  "exchange": "okx",
+  "fallback": "bitget",
+  "bar": "1H",
+  "preset": "Auto",
+  "coins": [
+    "ENA-USDT",
+    "LINK-USDT",
+    "ONDO-USDT",
+    "PENDLE-USDT",
+    "FET-USDT",
+    "FARTCOIN-USDT",
+    "EIGEN-USDT",
+    "AERO-USDT",
+    "SUI-USDT",
+    "WLD-USDT"
+  ]
+}
