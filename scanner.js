@@ -1,5 +1,5 @@
 'use strict';
-// Scanner konfluensi multi-timeframe (aturan sama dengan kartu "Rekomendasi Eksekusi" di dashboard).
+// Scanner konfluensi multi-timeframe (hasilnya ditampilkan di tabel daftar koin pada dashboard).
 //   node scanner.js            -> scan sekali, tampilkan tabel, tulis scan.json (tanpa notifikasi)
 //   node scanner.js --watch    -> scan tiap jam, sesaat setelah bar close
 // Daftar koin & exchange: coins.json (atau env COINS="ENA-USDT,SOL-USDT", SCAN_EXCHANGE=okx|bitget).
@@ -67,7 +67,7 @@ function snrOf(I, p0) { // p0 = harga terkini (close bar eksekusi terakhir), buk
   return { res: hr ? res : null, sup: hs ? sup : null, dRes: hr && a > 0 ? (res - p0) / a : null, dSup: hs && a > 0 ? (p0 - sup) / a : null };
 }
 
-// Aturan keputusan: identik dengan renderMTF() di public/index.html
+// Aturan keputusan. Satu-satunya sumber: dashboard hanya menampilkan hasil scan.json (status = side + title).
 function decide(I, lad, sn, P) {
   const [e, m, j] = I, dir = e.trend, side = dir === 1 ? 'BUY' : 'SELL', mi = lad[1];
   const sig = e.age <= P.fresh;
@@ -78,8 +78,8 @@ function decide(I, lad, sn, P) {
   else if (!aligned) { code = 'rejected'; title = 'DITOLAK: MELAWAN TREN ' + mi.toUpperCase(); }
   else if (m.tqi < P.mid || e.tqi < P.ex) { code = 'weak'; title = 'KUALITAS LEMAH (TQI RENDAH)'; }
   else if (near) { code = 'near'; title = `HATI-HATI: DEKAT ${dir === 1 ? 'RESISTANCE' : 'SUPPORT'}`; }
-  else if ((P.d1 === 'required' ? majOk : true) && e.tqi >= P.strong) { code = 'strong'; title = `KONFLUENSI KUAT ${side} ${arrow(dir)}`; }
-  else { code = 'valid'; title = `VALID ${side} (RISIKO SEDANG)`; }
+  else if ((P.d1 === 'required' ? majOk : true) && e.tqi >= P.strong) { code = 'strong'; title = 'KONFLUENSI KUAT'; }
+  else { code = 'valid'; title = 'VALID (RISIKO SEDANG)'; }
   return { code, title, side, dir, sig, d1: j ? (majOk ? 'searah' : 'berlawanan') : null };
 }
 
@@ -170,7 +170,7 @@ async function doScan({ notify: doNotify = true, summary = true } = {}) {
       const { hour, date } = localParts(cfg.tz);
       if (hour === cfg.summaryHour && st.lastSummary !== date) {
         st.lastSummary = date;
-        const lines = results.map(r => (r.ok ? `${r.pair}${r.exchange !== cfg.exchange ? ` [${r.exchange.toUpperCase()}]` : ''}: ${r.title} | ${LAD[cfg.bar].filter(Boolean).map(b => `${b}${arrow(r.tf[b].trend)}`).join(' ')} TQI ${r.tf[LAD[cfg.bar][0]].tqi.toFixed(2)}${r.d1 ? ` 1D${r.d1 === 'searah' ? '✓' : '✗'}` : ''}` : `${r.pair}: ERROR ${r.error}`));
+        const lines = results.map(r => (r.ok ? `${r.pair}${r.exchange !== cfg.exchange ? ` [${r.exchange.toUpperCase()}]` : ''}: ${r.side} · ${r.title} | ${LAD[cfg.bar].filter(Boolean).map(b => `${b}${arrow(r.tf[b].trend)}`).join(' ')} TQI ${r.tf[LAD[cfg.bar][0]].tqi.toFixed(2)}${r.d1 ? ` 1D${r.d1 === 'searah' ? '✓' : '✗'}` : ''}` : `${r.pair}: ERROR ${r.error}`));
         await notify(`📋 Ringkasan scan ${cfg.summaryHour}:00 (${cfg.bar}, ${cfg.exchange.toUpperCase()}, preset ${cfg.preset})\n${lines.join('\n')}`);
       }
     }
