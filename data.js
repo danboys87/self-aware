@@ -1,5 +1,4 @@
 'use strict';
-const fs = require('fs');
 
 function barMinutes(bar) { // format OKX: 15m, 1H, 4H, 1D
   const m = /^(\d+)([mHDW])$/.exec(bar);
@@ -81,18 +80,4 @@ async function fetchCandles(ex, pair, bar = '1H', total = 600) {
   throw new Error('exchange tidak dikenal: ' + ex);
 }
 
-// CSV (mis. export chart TradingView): kolom time,open,high,low,close,volume
-function loadCSV(file) {
-  const lines = fs.readFileSync(file, 'utf8').trim().split(/\r?\n/);
-  const head = lines[0].split(',').map(s => s.trim().toLowerCase());
-  const ix = k => head.indexOf(k);
-  const [it, io, ih, il, ic, iv] = ['time', 'open', 'high', 'low', 'close', 'volume'].map(ix);
-  return lines.slice(1).map(l => {
-    const f = l.split(',');
-    const raw = f[it].trim();
-    const t = /^\d+$/.test(raw) ? (raw.length <= 10 ? +raw * 1000 : +raw) : Date.parse(raw);
-    return { t, open: +f[io], high: +f[ih], low: +f[il], close: +f[ic], volume: iv >= 0 ? +f[iv] : 0, confirmed: true };
-  });
-}
-
-module.exports = { fetchCandles, fetchCandlesOKX, fetchCandlesBitget, normPair, loadCSV, barMinutes };
+module.exports = { fetchCandles, fetchCandlesOKX, fetchCandlesBitget, normPair, barMinutes };
