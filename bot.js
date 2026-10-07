@@ -60,7 +60,7 @@ async function manage(pair, scan) {
     p.lastT = c.t;
     if (res) {
       const pnl = res.R * p.risk * p.qty;
-      state.closed.push({ pair, reason: res.reason, R: res.R, pnl, entryT: p.entryT, exitT: c.t });
+      state.closed.push({ pair, reason: res.reason, R: res.R, pnl, entryT: p.entryT, exitT: c.t, entry: p.entry, exit: res.exit, qty: p.qty, exchange: ex, bar, code: p.code, hit: p.hit.slice() });
       state.positions[pair] = null;
       await notify(`[PAPER] CLOSE ${pair} ${res.reason} @ ${px(res.exit)} | ${res.R.toFixed(2)}R | ${pnl.toFixed(2)} USD`);
       break;

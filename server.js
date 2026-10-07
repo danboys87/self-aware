@@ -3,7 +3,7 @@
 // Env: PORT=3000 DASH_TOKEN=rahasia STATE_FILE=./state.json
 //   GET /                      -> dashboard
 //   GET /api/candles?ex=okx|bitget&pair=BTC-USDT&bar=1H&limit=600   (hanya candle yang sudah close)
-//   GET /api/positions         -> posisi & histori dari state.json milik bot
+//   GET /api/positions         -> posisi (dengan harga live) & histori trade dari state.json milik bot
 // Jika DASH_TOKEN diisi, semua /api/* butuh ?token=... atau header x-token.
 const http = require('http');
 const fs = require('fs');
@@ -45,6 +45,17 @@ function getCandles(ex, pair, bar, limit) {
   return p;
 }
 
+const priceCache = new Map(); // key -> { ts, v }
+async function livePrice(ex, pair, bar) { // close candle berjalan = harga terakhir; null jika exchange gagal
+  const key = `${ex}|${pair}|${bar}`;
+  const hit = priceCache.get(key);
+  if (hit && Date.now() - hit.ts < CACHE_MS) return hit.v;
+  let v = null;
+  try { const cs = await fetchCandles(ex, pair, bar, 2); if (cs.length) v = cs[cs.length - 1].close; } catch { /* abaikan */ }
+  priceCache.set(key, { ts: Date.now(), v });
+  return v;
+}
+
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   try {
@@ -76,19 +87,21 @@ http.createServer(async (req, res) => {
       if (url.pathname === '/api/positions') {
         let st = {};
         try { st = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); } catch { /* belum ada state */ }
-        const positions = Object.entries(st.positions || {}).filter(([, v]) => v).map(([pair, v]) => ({ pair, ...v }));
-        return send(res, 200, { positions, closed: (st.closed || []).slice(-20).reverse(), lastBar: st.lastBar || {} });
+        const positions = await Promise.all(Object.entries(st.positions || {}).filter(([, v]) => v).map(async ([pair, v]) => ({
+          pair, ...v, price: await livePrice(v.exchange || 'okx', pair, v.bar || '1H'),
+        })));
+        return send(res, 200, { positions, closed: (st.closed || []).slice(-500).reverse(), lastBar: st.lastBar || {}, serverTime: Date.now() });
       }
 
       if (url.pathname === '/api/scan' && req.method === 'GET') {
         let scan = { results: [] };
         try { scan = JSON.parse(fs.readFileSync(SCAN_FILE, 'utf8')); } catch { /* belum ada hasil scan */ }
-        return send(res, 200, scan);
+        return send(res, 200, { ...scan, scheduler: scanner.status() });
       }
       if (url.pathname === '/api/scan/run' && req.method === 'POST') {
         if (Date.now() - lastManualScan < 30000) return send(res, 429, { error: 'tunggu 30 detik antar scan manual' });
         lastManualScan = Date.now();
-        return send(res, 200, await scanner.runScan({ summary: false }));
+        return send(res, 200, { ...(await scanner.runScan({ summary: false })), scheduler: scanner.status() });
       }
     }
     send(res, 404, { error: 'tidak ditemukan' });
