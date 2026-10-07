@@ -98,7 +98,7 @@ async function analyzeCoin(ex, pair, cfg) {
   const d = decide(I, lad, sn, cfg.P);
   const e = I[0];
   return {
-    pair, ok: true, exchange: ex, d1: d.d1, code: d.code, title: d.title, side: d.side, price: e.cs[e.cs.length - 1].close, snrTf: lad[2] || lad[1],
+    pair, ok: true, exchange: ex, d1: d.d1, code: d.code, title: d.title, side: d.side, price: e.cs[e.cs.length - 1].close, barT: e.cs[e.cs.length - 1].t, snrTf: lad[2] || lad[1],
     tf: Object.fromEntries(lad.map((b, i) => b && [b, { trend: I[i].trend, tqi: I[i].tqi, er: I[i].er, age: I[i].age }]).filter(Boolean)),
     snr: sn, flipT: e.flipT,
     levels: d.side === 'BUY' && e.levels ? { entry: e.levels.entry, sl: e.levels.sl, tp1: e.levels.tp[0], tp2: e.levels.tp[1], r1: e.levels.tpR[0], r2: e.levels.tpR[1] } : null,
@@ -142,6 +142,9 @@ function runScan(opts = {}) {
   return running;
 }
 
+const listeners = [];
+const onScan = fn => { listeners.push(fn); }; // dipanggil tiap scan selesai (dipakai bot)
+
 async function doScan({ notify: doNotify = true, summary = true } = {}) {
   const cfg = loadConfig();
   const results = [];
@@ -177,19 +180,28 @@ async function doScan({ notify: doNotify = true, summary = true } = {}) {
     fs.writeFileSync(STATE_FILE, JSON.stringify(st, null, 2));
     fs.writeFileSync(LOG_FILE, JSON.stringify(log.slice(-1000), null, 2));
   }
+  for (const fn of listeners) Promise.resolve().then(() => fn(scan)).catch(e => console.error('onScan:', e.message));
   return scan;
 }
 
 // Jalankan tepat sesaat setelah jam penuh (bar 1H baru close). delay memberi waktu exchange memfinalkan candle.
 const msToNextHour = (now = Date.now(), delay = 10000) => (Math.floor(now / 3600000) + 1) * 3600000 + delay - now;
+let sched = null; // status penjadwal otomatis, dibaca dashboard lewat /api/scan
+const status = () => (sched ? { active: true, startedAt: sched.startedAt, next: sched.next } : { active: false });
 function start() {
-  const tick = () => runScan().catch(e => console.error('scan:', e.message)).finally(() => setTimeout(tick, msToNextHour()));
+  if (sched) return; // jangan dobel
+  sched = { startedAt: Date.now(), next: null };
+  const tick = () => runScan().catch(e => console.error('scan:', e.message)).finally(() => {
+    const ms = msToNextHour();
+    sched.next = Date.now() + ms;
+    setTimeout(tick, ms);
+  });
   const cfg = loadConfig();
   console.log(`Scanner aktif: ${cfg.coins.join(', ') || '(belum ada koin)'} | ${cfg.exchange}${cfg.fallback ? '+' + cfg.fallback : ''} | ${cfg.bar} | preset ${cfg.preset} | scan berikutnya tiap jam penuh`);
   tick();
 }
 
-module.exports = { analyzeCoin, runScan, start, loadConfig, msToNextHour, decide, tfInfo, snrOf, LAD };
+module.exports = { analyzeCoin, runScan, start, status, onScan, loadConfig, msToNextHour, decide, tfInfo, snrOf, LAD };
 
 if (require.main === module) {
   if (process.argv.includes('--watch')) start();
