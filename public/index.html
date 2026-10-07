@@ -272,7 +272,9 @@ function renderScan(j){
   const x0=r.tf[lad[0]],sc=r.side||(x0.trend===1?'BUY':'SELL'),ttl=String(r.title).replace(/ (BUY|SELL)(?= |$)/,'').replace(/ [▲▼]$/,''),rx=r.exchange||j.exchange,tag=rx!==j.exchange?` <span class="mu">[${esc(rx.toUpperCase())}]</span>`:'';
   h+=`<tr data-pair="${esc(r.pair)}" data-ex="${esc(rx)}"${sel}><td>${esc(r.pair)}${tag}</td><td class="${SCL[r.code]}"><b class="${r.code==='wait'?'mu':sc==='BUY'?'up':'dn'}">${sc}</b> · ${esc(ttl)}${r.d1?` <span class="${r.d1==='searah'?'up':'wn'}">· 1D ${r.d1==='searah'?'✓':'✗'}</span>`:''}</td>${lad.map(b=>{const x=r.tf[b];return `<td class="${x.trend===1?'up':'dn'}">${x.trend===1?'▲':'▼'} ${x.age}b</td>`}).join('')}<td class="${x0.tqi>.6?'up':x0.tqi>.35?'wn':'dn'}">${f(x0.tqi)}</td><td>${px(r.price)}</td></tr>`});
  $('#scantab').innerHTML=h;
- $('#scaninfo').textContent=`Scan ${new Date(j.updated).toLocaleTimeString()} · ${j.exchange.toUpperCase()} · ${j.bar} · preset ${j.preset} · klik koin untuk melihat grafik`;
+ const age=Date.now()-j.updated,m=Math.max(0,Math.round(age/60000)),agoT=m<1?'baru saja':m<60?m+' mnt lalu':Math.floor(m/60)+' jam '+(m%60)+' mnt lalu',hm=t=>new Date(t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+ const sch=j.scheduler,auto=!sch?'':sch.active?(sch.next?`auto-scan aktif, berikutnya ${hm(sch.next)}`:'auto-scan aktif, sedang memindai'):'<span class="dn">⚠ auto-scan TIDAK aktif di server ini (jalankan dengan npm start)</span>';
+ $('#scaninfo').innerHTML=`Scan ${esc(new Date(j.updated).toLocaleTimeString())} (<span class="${age>75*60000?'dn':''}">${agoT}</span>) · ${esc(j.exchange.toUpperCase())} · ${esc(j.bar)} · preset ${esc(j.preset)}${auto?' · '+auto:''} · klik koin untuk melihat grafik`;
 }
 async function pullScan(){try{const r=await fetch('/api/scan?'+qs({}));if(!r.ok)return;renderScan(await r.json())}catch{}}
 const LAD={'15m':['15m','1H','4H'],'30m':['30m','4H','1D'],'1H':['1H','4H','1D'],'4H':['4H','1D',null]}; // [eksekusi, struktur, mayor]
@@ -304,7 +306,7 @@ async function pullPos(){
 function renderPos(j){
  const cardEl=$('#poscard');if(!j.positions.length&&!j.closed.length){cardEl.hidden=true;return}
  cardEl.hidden=false;let h='<tr><th>Posisi bot (paper)</th><th>Status</th></tr>';
- if(j.positions.length){h+=sec('Terbuka');for(const p of j.positions)h+=row(p.pair+(p.dir>0?' ▲':' ▼'),`${px(p.entry)} · SL ${px(p.sl)} · TP1 ${px(p.tp[0])}${p.hit[0]?' ✓':''} · TP2 ${px(p.tp[1])}`)}
+ if(j.positions.length){h+=sec('Terbuka');for(const p of j.positions)h+=row(p.pair+(p.dir>0?' ▲':' ▼'),`${px(p.entry)} · SL ${px(p.sl)}${p.be?' (BE)':''} · TP1 ${px(p.tp[0])}${p.hit[0]?' ✓':''} · TP2 ${px(p.tp[1])}`)}
  else h+=sec('Tidak ada posisi terbuka');
  if(j.closed.length){h+=sec('Trade terakhir');for(const c of j.closed.slice(0,8))h+=row(`${c.pair} ${c.reason}`,`${c.R>=0?'+':''}${f(c.R)}R`,c.R>0?'up':'dn')}
  $('#pos').innerHTML=h;
@@ -327,6 +329,8 @@ $('#demo').onclick=()=>{setLive(false);demo()};
 $('#load').onclick=()=>{setLive(false);parse($('#paste').value,'CSV tempel')};
 $('#file').onchange=e=>{const fl=e.target.files[0];if(!fl)return;setLive(false);const rd=new FileReader();rd.onload=()=>parse(rd.result,fl.name);rd.readAsText(fl)};
 setLive(true);pull();
+setInterval(pullScan,60000); // tabel scan tetap diperbarui walau Live OFF / demo / CSV
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){pullScan();if(timer)pull()}}); // tab aktif lagi (timer browser diperlambat saat di background)
 </script>
 </body>
 </html>
