@@ -54,11 +54,30 @@ a{color:var(--head)}
 .note{color:var(--muted);font-size:12px;padding:0 4px 10px}
 details{margin-bottom:12px}summary{cursor:pointer;color:var(--muted);font-size:12.5px}
 textarea{width:100%;min-height:90px;margin-top:6px}
+.tabs{display:flex;gap:4px;margin:0 0 12px;border-bottom:1px solid var(--line)}
+.tabs button{border:0;border-bottom:2px solid transparent;border-radius:0;background:none;padding:8px 14px;color:var(--muted);font-weight:500;margin-bottom:-1px}
+.tabs button:hover{border-color:transparent;border-bottom-color:var(--line);color:var(--text)}
+.tabs button[aria-selected=true]{color:var(--text);border-bottom-color:var(--head)}
+.badge{background:var(--head);color:#fff;border-radius:9px;padding:0 7px;font-size:11.5px;margin-left:7px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+.stat .k{color:var(--muted);font-size:12px}.stat .v{font-size:20px;font-weight:600;line-height:1.3}.stat .s{color:var(--muted);font-size:12px}
+.tbl{overflow-x:auto}.tbl table{min-width:680px}
+.tbl th,.tbl td{text-align:right;white-space:nowrap}.tbl th:first-child,.tbl td:first-child{text-align:left}
+.tbl td:first-child{color:var(--text);font-weight:500}
+.tbl tr[data-pair]{cursor:pointer}.tbl tr[data-pair]:hover td{background:var(--row)}
+.tbl .empty{padding:18px 14px;color:var(--muted);text-align:left;white-space:normal}
+.eq{display:block;width:100%;height:110px}.eqwrap{padding:6px 12px 10px}
 </style>
 </head>
 <body>
 <main>
 <h1>Self-Aware Trend System: Dashboard Live</h1>
+<nav class="tabs" role="tablist" aria-label="Tampilan dashboard">
+  <button role="tab" id="tab-scan" aria-selected="true" aria-controls="view-scan">Scanner &amp; Chart</button>
+  <button role="tab" id="tab-trades" aria-selected="false" aria-controls="view-trades">Trades<span id="tradebadge" class="badge" hidden></span></button>
+</nav>
+<section id="view-scan" role="tabpanel" aria-labelledby="tab-scan">
 <p class="sub" id="meta"></p>
 <div class="bar">
   <label>Preset <select id="preset"><option>Auto</option><option>Crypto 24/7</option><option>Default</option><option>Scalping</option><option>Swing</option></select></label>
@@ -75,8 +94,7 @@ textarea{width:100%;min-height:90px;margin-top:6px}
 <details><summary>Atau tempel CSV (time,open,high,low,close,volume)</summary><textarea id="paste" placeholder="time,open,high,low,close,volume"></textarea><button id="load">Pakai data ini</button></details>
 <div class="card" id="scancard" hidden><table class="mtf scan" id="scantab"></table><div class="snr scanbar"><span id="scaninfo"></span><button id="scanbtn">Scan sekarang</button></div></div>
 <div class="grid">
-  <div><div class="card"><table id="dash"></table></div>
-  <div class="card" id="poscard" hidden><table id="pos"></table></div></div>
+  <div><div class="card"><table id="dash"></table></div></div>
   <div>
     <div class="card"><div id="ctitle" class="ctitle"></div><div class="chartwrap"><div id="legend" class="legend" aria-live="off"></div><div id="chart" role="img" aria-label="Grafik candle dengan garis SuperTrend adaptif dan sinyal"></div>
     <p class="note">Garis hijau/merah = SuperTrend adaptif (naik/turun). Panah = sinyal. Garis putus-putus = SL, TP1, TP2 dari sinyal terakhir; garis abu-abu = entry. Waktu pada grafik: UTC.</p></div></div>
@@ -84,6 +102,14 @@ textarea{width:100%;min-height:90px;margin-top:6px}
   </div>
 </div>
 <p class="note">Data diambil lewat server setiap 30 detik (hanya candle yang sudah close). Jika server tidak terjangkau, halaman memakai data demo sintetik. Dashboard ini hanya alat bantu analisis, bukan saran keuangan.</p>
+</section>
+<section id="view-trades" role="tabpanel" aria-labelledby="tab-trades" hidden>
+  <div class="stats" id="stats"></div>
+  <div class="card" id="eqcard" hidden><div class="ctitle"><b>Kurva PnL</b><span id="eqsub"></span></div><div class="eqwrap" id="eq"></div></div>
+  <div class="card"><div class="ctitle"><b>Trade berjalan</b><span id="opensub"></span></div><div class="tbl" id="opentab"></div></div>
+  <div class="card"><div class="ctitle"><b>Riwayat trade</b><span id="histsub"></span></div><div class="tbl" id="histtab"></div><div class="snr" id="histmore" hidden><button id="histbtn"></button></div></div>
+  <p class="note">Semua angka berasal dari paper trading (simulasi), tanpa fee dan slippage. PnL trade berjalan memakai harga terakhir dari exchange dan sudah termasuk bagian posisi yang ditutup di TP1. Waktu mengikuti zona waktu browser. Klik baris untuk melihat chart koinnya.</p>
+</section>
 <p class="note">Grafik memakai <a href="https://www.tradingview.com/">TradingView</a> Lightweight Charts™ (Apache-2.0).</p>
 </main>
 <script src="vendor/lightweight-charts.standalone.production.js"></script>
@@ -298,19 +324,88 @@ async function pull(){
   if(!S){demo();$('#meta').textContent='Server/exchange tidak terjangkau ('+e.message+'). Menampilkan data demo.';}
   else $('#meta').textContent='Gagal ambil data: '+e.message+' (menampilkan data terakhir)';
  }
- pullPos();pullScan();
+ pullScan();
+}
+// ---------- Tab Trades: trade berjalan, PnL, riwayat ----------
+const W_=.5,HIST_N=50;let HIST_ALL=false,TR=null;
+const num=v=>typeof v==='number'&&isFinite(v); // isFinite(null) bernilai true, jadi cek tipe juga
+const usd=v=>num(v)?(v>=0?'+':'-')+Math.abs(v).toFixed(2):'—',rr=v=>num(v)?(v>=0?'+':'-')+Math.abs(v).toFixed(2)+'R':'—',pc=v=>v>0?'up':v<0?'dn':'';
+const dtm=t=>new Date(t).toLocaleString([],{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+const dur=ms=>{const m=Math.max(0,Math.round(ms/60000));if(m<60)return m+' mnt';const h=Math.floor(m/60);return h<48?h+' j'+(m%60?' '+(m%60)+' m':''):Math.floor(h/24)+' h'+(h%24?' '+(h%24)+' j':'')};
+const barMs=b=>(TFM[b||'1H']||60)*60000;
+function openPnl(p){ // PnL posisi berjalan: bagian yang sudah ditutup di TP1 + sisa posisi di harga terakhir
+ if(!num(p.price))return null;
+ const taken=p.hit.reduce((a,h,k)=>a+(h?W_*p.tpR[k]:0),0),rem=1-W_*p.hit.filter(Boolean).length;
+ const R=taken+rem*((p.dir||1)*(p.price-p.entry)/p.risk);return{R,usd:R*p.risk*p.qty};
 }
 async function pullPos(){
- try{const r=await fetch('/api/positions?'+qs({}));if(!r.ok)return;renderPos(await r.json())}catch{}
+ try{const r=await fetch('/api/positions?'+qs({}));if(!r.ok)return;TR=await r.json();renderTrades(TR)}catch{}
 }
-function renderPos(j){
- const cardEl=$('#poscard');if(!j.positions.length&&!j.closed.length){cardEl.hidden=true;return}
- cardEl.hidden=false;let h='<tr><th>Posisi bot (paper)</th><th>Status</th></tr>';
- if(j.positions.length){h+=sec('Terbuka');for(const p of j.positions)h+=row(p.pair+(p.dir>0?' ▲':' ▼'),`${px(p.entry)} · SL ${px(p.sl)}${p.be?' (BE)':''} · TP1 ${px(p.tp[0])}${p.hit[0]?' ✓':''} · TP2 ${px(p.tp[1])}`)}
- else h+=sec('Tidak ada posisi terbuka');
- if(j.closed.length){h+=sec('Trade terakhir');for(const c of j.closed.slice(0,8))h+=row(`${c.pair} ${c.reason}`,`${c.R>=0?'+':''}${f(c.R)}R`,c.R>0?'up':'dn')}
- $('#pos').innerHTML=h;
+function renderTrades(j){
+ TR=j; // simpan data terakhir agar tombol "Tampilkan semua" bisa render ulang
+ const open=j.positions||[],closed=j.closed||[],now=Date.now();
+ const bd=$('#tradebadge');bd.hidden=!open.length;bd.textContent=open.length;
+ // ringkasan
+ const opn=open.map(openPnl),unreal=opn.reduce((a,x)=>a+(x?x.usd:0),0),real=closed.reduce((a,c)=>a+(c.pnl||0),0);
+ const wins=closed.filter(c=>c.pnl>0),losses=closed.filter(c=>!(c.pnl>0)),sw=wins.reduce((a,c)=>a+c.pnl,0),sl=Math.abs(losses.reduce((a,c)=>a+(c.pnl||0),0));
+ const avgR=closed.length?closed.reduce((a,c)=>a+(c.R||0),0)/closed.length:NaN;
+ const pf=!closed.length?'—':sl>0?(sw/sl).toFixed(2):sw>0?'∞':'—';
+ const st=(k,v,s,cl='')=>`<div class="stat"><div class="k">${k}</div><div class="v ${cl}">${v}</div><div class="s">${s}</div></div>`;
+ $('#stats').innerHTML=
+  st('PnL total',usd(real+unreal)+' USD',`tertutup ${usd(real)} · berjalan ${usd(unreal)}`,pc(real+unreal))+
+  st('Win rate',closed.length?Math.round(wins.length/closed.length*100)+'%':'—',`${wins.length} menang · ${losses.length} kalah`)+
+  st('Rata-rata R',rr(avgR),`dari ${closed.length} trade`,pc(avgR))+
+  st('Profit factor',pf,'total profit ÷ total rugi')+
+  st('Trade',`${open.length} berjalan`,`${closed.length} tertutup`);
+ // kurva PnL kumulatif (trade tertutup, urut waktu)
+ const eqc=$('#eqcard');eqc.hidden=closed.length<2;
+ if(closed.length>=2){
+  const seq=closed.slice().reverse(),pts=[0];seq.forEach(c=>pts.push(pts[pts.length-1]+(c.pnl||0)));
+  const mn=Math.min(...pts,0),mx=Math.max(...pts,0),sp=(mx-mn)||1,X=i=>i/(pts.length-1)*600,Y=v=>104-(v-mn)/sp*98;
+  const line=pts.map((v,i)=>X(i).toFixed(1)+','+Y(v).toFixed(1)).join(' '),last=pts[pts.length-1];
+  $('#eq').innerHTML=`<svg class="eq" viewBox="0 0 600 110" preserveAspectRatio="none" role="img" aria-label="Kurva PnL kumulatif">${mn<0&&mx>0?`<line x1="0" x2="600" y1="${Y(0).toFixed(1)}" y2="${Y(0).toFixed(1)}" style="stroke:var(--line)" stroke-dasharray="4 4" vector-effect="non-scaling-stroke"/>`:''}<polyline points="${line}" fill="none" style="stroke:${last>=0?'var(--bull)':'var(--bear)'}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
+  $('#eqsub').innerHTML=`kumulatif ${closed.length} trade tertutup · sekarang <b class="${pc(last)}">${usd(last)} USD</b>`;
+ }
+ // trade berjalan
+ $('#opensub').textContent=open.length?`${open.length} posisi`:'';
+ if(!open.length)$('#opentab').innerHTML='<div class="empty">Belum ada trade berjalan. Bot membuka posisi paper otomatis saat scanner menemukan sinyal BUY berstatus KUAT atau VALID.</div>';
+ else{
+  let h='<table><tr><th>Koin</th><th>Masuk</th><th>Umur</th><th>Entry</th><th>Kini</th><th>SL</th><th>TP1</th><th>TP2</th><th>Nilai</th><th>PnL</th></tr>';
+  open.forEach((p,i)=>{const et=p.entryT+barMs(p.bar),x=opn[i];
+   h+=`<tr data-pair="${esc(p.pair)}" data-ex="${esc(p.exchange||'')}" data-bar="${esc(p.bar||'')}"><td>${esc(p.pair)} <span class="mu">${esc((p.exchange||'').toUpperCase())}</span></td><td>${dtm(et)}</td><td>${dur(now-et)}</td><td>${px(p.entry)}</td><td>${num(p.price)?px(p.price):'—'}</td><td>${px(p.sl)}${p.be?' <span class="wn" title="SL sudah dipindah ke titik entry">BE</span>':''}</td><td>${px(p.tp[0])}${p.hit[0]?' <span class="up">✓</span>':''}</td><td>${px(p.tp[1])}${p.hit[1]?' <span class="up">✓</span>':''}</td><td>${(p.qty*p.entry).toFixed(0)} $</td><td class="${x?pc(x.usd):''}">${x?usd(x.usd)+' $ · '+rr(x.R):'—'}</td></tr>`});
+  $('#opentab').innerHTML=h+'</table>';
+ }
+ // riwayat
+ $('#histsub').textContent=closed.length?`${closed.length} trade`:'';
+ if(!closed.length)$('#histtab').innerHTML='<div class="empty">Belum ada trade yang selesai.</div>';
+ else{
+  const list=HIST_ALL?closed:closed.slice(0,HIST_N);
+  let h='<table><tr><th>Ditutup</th><th>Koin</th><th>Alasan</th><th>Entry → Exit</th><th>Durasi</th><th>R</th><th>PnL (USD)</th></tr>';
+  list.forEach(c=>{const ms=barMs(c.bar),cl=pc(c.pnl);
+   h+=`<tr data-pair="${esc(c.pair)}" data-ex="${esc(c.exchange||'')}" data-bar="${esc(c.bar||'')}"><td>${dtm(c.exitT+ms)}</td><td>${esc(c.pair)}${c.exchange?` <span class="mu">${esc(c.exchange.toUpperCase())}</span>`:''}</td><td class="${cl}">${esc(c.reason)}${c.hit&&c.hit[0]&&c.reason!=='TP2'?' <span class="mu">· TP1 ✓</span>':''}</td><td>${num(c.entry)&&num(c.exit)?px(c.entry)+' → '+px(c.exit):'—'}</td><td>${dur(c.exitT-c.entryT)}</td><td class="${cl}">${rr(c.R)}</td><td class="${cl}">${usd(c.pnl)}</td></tr>`});
+  $('#histtab').innerHTML=h+'</table>';
+ }
+ const more=$('#histmore');more.hidden=closed.length<=HIST_N;$('#histbtn').textContent=HIST_ALL?'Tampilkan 50 terakhir saja':`Tampilkan semua (${closed.length})`;
 }
+$('#histbtn').onclick=()=>{HIST_ALL=!HIST_ALL;if(TR)renderTrades(TR)};
+function selectTab(name){
+ const t=name==='trades';
+ $('#view-scan').hidden=t;$('#view-trades').hidden=!t;
+ $('#tab-scan').setAttribute('aria-selected',String(!t));$('#tab-trades').setAttribute('aria-selected',String(t));
+ try{history.replaceState(null,'',t?'#trades':location.pathname+location.search)}catch{}
+ if(t)pullPos();
+}
+$('#tab-scan').onclick=()=>selectTab('scan');$('#tab-trades').onclick=()=>selectTab('trades');
+$('.tabs').addEventListener('keydown',e=>{if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight')return;const t=e.key==='ArrowRight';selectTab(t?'trades':'scan');$(t?'#tab-trades':'#tab-scan').focus()});
+function openChart(tr){ // klik baris trade -> tampilkan chart koinnya
+ const sj=typeof SCANJ!=='undefined'&&SCANJ;
+ selectTab('scan');$('#pair').value=tr.dataset.pair;
+ const ex=tr.dataset.ex||(sj&&sj.exchange);if(ex)$('#ex').value=ex;
+ const bar=tr.dataset.bar||(sj&&sj.bar);if(bar)$('#bar').value=bar;
+ if(sj)renderScan(SCANJ);
+ setLive(true);pull();const c=$('#chart');if(c.scrollIntoView)c.scrollIntoView({behavior:'smooth',block:'center'});
+}
+['#opentab','#histtab'].forEach(id=>$(id).addEventListener('click',e=>{const tr=e.target&&e.target.closest&&e.target.closest('tr[data-pair]');if(tr)openChart(tr)}));
 ['preset','tp','tf'].forEach(id=>$('#'+id).addEventListener('input',()=>S&&render()));
 $('#scantab').addEventListener('click',e=>{
  const tr=e.target&&e.target.closest&&e.target.closest('tr[data-pair]');if(!tr)return;
@@ -330,7 +425,9 @@ $('#load').onclick=()=>{setLive(false);parse($('#paste').value,'CSV tempel')};
 $('#file').onchange=e=>{const fl=e.target.files[0];if(!fl)return;setLive(false);const rd=new FileReader();rd.onload=()=>parse(rd.result,fl.name);rd.readAsText(fl)};
 setLive(true);pull();
 setInterval(pullScan,60000); // tabel scan tetap diperbarui walau Live OFF / demo / CSV
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){pullScan();if(timer)pull()}}); // tab aktif lagi (timer browser diperlambat saat di background)
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){pullScan();pullPos();if(timer)pull()}}); // tab aktif lagi (timer browser diperlambat saat di background)
+pullPos();setInterval(pullPos,30000); // badge & tab Trades selalu segar, tidak tergantung Live ON/OFF
+if(location.hash==='#trades')selectTab('trades');
 </script>
 </body>
 </html>
